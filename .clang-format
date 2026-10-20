@@ -1,0 +1,27 @@
+# LOOT SMITH のコードスタイル (C11)。整形: clang-format -i src/*.c src/*/*.c src/*/*.h tests/*.c
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+# 波括弧: 関数・制御文とも行末に開き、制御文は 1 文でも必ず波括弧を付ける
+BreakBeforeBraces: Attach
+InsertBraces: true
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+# 複数行の条件式・引数: 演算子は行末に置き、引数は桁幅で折り返す
+BreakBeforeBinaryOperators: None
+AlignOperands: Align
+AlignAfterOpenBracket: Align
+BinPackArguments: true
+BinPackParameters: true
+PointerAlignment: Right
+IndentCaseLabels: true
+# include の順序には意味を持たせているので並べ替えない
+SortIncludes: Never
+ReflowComments: true
+MaxEmptyLinesToKeep: 1

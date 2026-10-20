@@ -1,0 +1,240 @@
+#include "simulation.h"
+#include "sim_internal.h"
+#include <string.h>
+#include <math.h>
+
+void equipment_compute_stats(Equipment *e, int forge_level) {
+    const EquipDef *q = &EQUIPS[e->type];
+    const MaterialDef *a = &MATERIALS[e->main], *b = &MATERIALS[e->sub];
+    double mult = upgrade_effect(UP_FORGE, forge_level) / 1000.0;
+#define BLEND(base, f) ((base) + (2.0 * a->f + b->f) / 3.0)
+    e->atk = roundi(BLEND(q->atk, atk) * mult);
+    e->def = roundi(BLEND(q->def, def) * mult);
+    e->mag = roundi(BLEND(q->mag, mag) * mult);
+    e->dur = roundi(BLEND(q->dur, dur) * mult);
+    e->wt = roundi(BLEND(q->wt, wt));
+#undef BLEND
+    if (e->wt < 1) {
+        e->wt = 1;
+    }
+}
+
+/* ---------- 品質 / 特性の層 ---------- */
+void quality_rates(int rank, int forge_level, int out[QUALITY_COUNT]) {
+    rank = clampi(rank, 0, RANK_COUNT - 1);
+    for (int q = 0; q < QUALITY_COUNT; q++) {
+        out[q] = QUALITY_RATE_PCT[rank][q];
+    }
+    int shift = clampi(forge_level, 0, UPGRADES[UP_FORGE].max_level) * BAL.quality_forge_shift_pct;
+    if (shift > out[QUALITY_COMMON]) {
+        shift = out[QUALITY_COMMON]; /* Common の残りを超えては移さない */
+    }
+    out[QUALITY_COMMON] -= shift;
+    out[QUALITY_FINE] += shift;
+}
+
+int quality_from_roll(int rank, int forge_level, int roll) {
+    int r[QUALITY_COUNT], acc = 0, last = QUALITY_COMMON;
+    quality_rates(rank, forge_level, r);
+    roll = clampi(roll, 0, 99);
+    for (int q = 0; q < QUALITY_COUNT; q++) {
+        if (r[q] <= 0) {
+            continue; /* 確率 0% の品質は決して当たらない */
+        }
+        acc += r[q];
+        last = q;
+        if (roll < acc) {
+            return q;
+        }
+    }
+    return last;
+}
+
+int trait_from_roll(int roll) {
+    return 1 + clampi(roll, 0, EQ_TRAIT_COUNT - 2);
+}
+
+const char *quality_name(int q) {
+    return q >= 0 && q < QUALITY_COUNT ? QUALITY_DEFS[q].name : "?";
+}
+
+const char *trait_name(int t) {
+    return t >= 0 && t < EQ_TRAIT_COUNT ? TRAIT_DEFS[t].name : "?";
+}
+
+void trait_effect_text(int trait, int quality, char *buf, size_t n) {
+    static const char *const stat_name[] = {"ATK", "DEF", "MAG", "DUR", "WT"};
+    if (!buf || n == 0) {
+        return;
+    }
+    buf[0] = 0;
+    if (trait <= EQ_TRAIT_NONE || trait >= EQ_TRAIT_COUNT || quality < 0 || quality >= QUALITY_COUNT) {
+        return;
+    }
+    const TraitDef *d = &TRAIT_DEFS[trait];
+    if (d->amount[quality] <= 0) {
+        return;
+    }
+    snprintf(buf, n, "%c%d %s", d->stat == TS_WT_DOWN ? '-' : '+', d->amount[quality], stat_name[d->stat]);
+}
+
+/* e には基本能力が入っていなければならない (直前に equipment_compute_stats が実行されている)。倍率と特性は
+ * ちょうど 1 回だけ適用する: すでに品質や特性を持つアイテムは拒否するので、繰り返し呼んでも累積しない。 */
+int equipment_apply_quality(Equipment *e, int quality, int trait) {
+    if (quality < 0 || quality >= QUALITY_COUNT || trait < 0 || trait >= EQ_TRAIT_COUNT) {
+        return 0;
+    }
+    if ((QUALITY_DEFS[quality].has_trait != 0) != (trait != EQ_TRAIT_NONE)) {
+        return 0;
+    }
+    if (e->quality != QUALITY_COMMON || e->trait != EQ_TRAIT_NONE) {
+        return 0;
+    }
+    int m = QUALITY_DEFS[quality].mult_pm;
+    e->atk = (e->atk * m + 500) / 1000; /* 四捨五入 (0.5 は切り上げ)。能力値は負にならない */
+    e->def = (e->def * m + 500) / 1000;
+    e->mag = (e->mag * m + 500) / 1000;
+    e->dur = (e->dur * m + 500) / 1000;
+    if (trait != EQ_TRAIT_NONE) {
+        int amt = TRAIT_DEFS[trait].amount[quality];
+        switch (TRAIT_DEFS[trait].stat) {
+            case TS_ATK:
+                e->atk += amt;
+                break;
+            case TS_DEF:
+                e->def += amt;
+                break;
+            case TS_MAG:
+                e->mag += amt;
+                break;
+            case TS_DUR:
+                e->dur += amt;
+                break;
+            case TS_WT_DOWN:
+                e->wt -= amt;
+                if (e->wt < 1) {
+                    e->wt = 1;
+                }
+                break;
+        }
+    }
+    e->quality = quality;
+    e->trait = trait;
+    return 1;
+}
+
+void equipment_build(Equipment *e, int forge_level, int quality, int trait) {
+    e->quality = QUALITY_COMMON;
+    e->trait = EQ_TRAIT_NONE; /* 最初から作り直す: 累積しない */
+    equipment_compute_stats(e, forge_level);
+    equipment_apply_quality(e, quality, trait); /* 不正な組み合わせは、ただの Common アイテムになる */
+}
+
+void equipment_price(Equipment *e) {
+    double stat = e->atk * BAL.val_atk_pm / 1000.0 + e->def * BAL.val_def_pm / 1000.0 +
+                  e->mag * BAL.val_mag_pm / 1000.0 + e->dur * BAL.val_dur_pm / 1000.0;
+    int lt = BAL.val_ref_weight - e->wt;
+    if (lt > 0) {
+        stat += lt * BAL.val_light_pm / 1000.0;
+    }
+    double value = e->cost * BAL.val_cost_pm / 1000.0 + stat * BAL.val_stat_pm / 1000.0;
+    /* 希少素材の優遇: 使った素材 3 個 (主 2 + 副 1) の希少度を、品質・特性・Forge を反映した後の価値にそのまま足す。
+     * 原価が 0 の報酬素材 (Dragon Scale) でも、希少さが価値と推奨価格に出る。従来の素材は 0 なので何も変わらない */
+    if (e->main >= 0 && e->main < MAT_COUNT && e->sub >= 0 && e->sub < MAT_COUNT) {
+        value += 2 * MATERIALS[e->main].rarity_value + MATERIALS[e->sub].rarity_value;
+    }
+    e->value = roundi(value);
+    e->rec_price = clampi((int)ceil(value * BAL.margin_pm / 1000.0), 1, BAL.price_cap);
+}
+
+static void craft_need(int main, int sub, int need[MAT_COUNT]) {
+    memset(need, 0, sizeof(int) * MAT_COUNT);
+    need[main] += 2;
+    need[sub] += 1;
+}
+
+int estimate_craft_cost(const GameState *g, int main, int sub) {
+    if (main < 0 || main >= MAT_COUNT || sub < 0 || sub >= MAT_COUNT) {
+        return 0;
+    }
+    int need[MAT_COUNT];
+    craft_need(main, sub, need);
+    double c = 0;
+    for (int m = 0; m < MAT_COUNT; m++) {
+        if (!need[m]) {
+            continue;
+        }
+        double unit = g->mat_stock[m] > 0 ? (double)g->mat_cost[m] / g->mat_stock[m] : (double)market_unit_price(g, m);
+        c += unit * need[m];
+    }
+    return roundi(c);
+}
+
+Result can_craft(const GameState *g, int eq, int main, int sub) {
+    if (g->phase != PH_PREP || g->status == ST_CLEARED || g->status == ST_FAILED) {
+        return R_ERR_PHASE;
+    }
+    if (eq < 0 || eq >= EQ_COUNT || main < 0 || main >= MAT_COUNT || sub < 0 || sub >= MAT_COUNT) {
+        return R_ERR_RANGE;
+    }
+    if (!equip_unlocked(g->guild_done, eq)) {
+        return R_ERR_LOCKED; /* 設計図がまだ獲得されていない */
+    }
+    if (g->inv_count >= MAX_INVENTORY) {
+        return R_ERR_FULL;
+    }
+    int need[MAT_COUNT];
+    craft_need(main, sub, need);
+    for (int m = 0; m < MAT_COUNT; m++) {
+        if (g->mat_stock[m] < need[m]) {
+            return R_ERR_MATERIAL;
+        }
+    }
+    return R_OK;
+}
+
+Result craft_equipment(GameState *g, int eq, int main, int sub, int *out_idx) {
+    Result r = can_craft(g, eq, main, sub);
+    if (r != R_OK) {
+        return r;
+    }
+    int need[MAT_COUNT];
+    craft_need(main, sub, need);
+    Equipment e;
+    memset(&e, 0, sizeof e);
+    e.type = eq;
+    e.main = main;
+    e.sub = sub;
+    for (int m = 0; m < MAT_COUNT; m++) {
+        if (!need[m]) {
+            continue;
+        }
+        int stock = g->mat_stock[m];
+        int removed =
+            (need[m] == stock) ? g->mat_cost[m] : (int)(((long long)g->mat_cost[m] * need[m] + stock / 2) / stock);
+        g->mat_stock[m] -= need[m];
+        g->mat_cost[m] -= removed;
+        e.cost += removed;
+    }
+    /* ここまでのすべてが成功し、もう失敗しえない: craft_rng を消費するのはここから (rng / guild_rng
+     * は決して消費しない)。 */
+    int forge = g->up_level[UP_FORGE];
+    int quality = quality_from_roll(guild_rank(g->guild_done), forge, rng_range(&g->craft_rng, 0, 99));
+    int trait = QUALITY_DEFS[quality].has_trait ? trait_from_roll(rng_range(&g->craft_rng, 0, EQ_TRAIT_COUNT - 2))
+                                                : EQ_TRAIT_NONE;
+    equipment_build(&e, forge, quality, trait); /* 基本能力 -> 品質 -> 特性。それぞれちょうど 1 回 */
+    equipment_price(&e);                        /* 価値と価格は最終的な能力から求める */
+    e.price = e.rec_price;
+    g->inv[g->inv_count] = e;
+    if (out_idx) {
+        *out_idx = g->inv_count;
+    }
+    g->inv_count++;
+    return R_OK;
+}
+
+void craft_migrate_legacy(GameState *g) {
+    /* 保存された状態から導出し、どの乱数ストリームも消費しない (v1 のセーブには guild_rng がまだないので、ここでは 0)
+     */
+    g->craft_rng = guild_seed(g->rng ^ CRAFT_SALT, g->guild_rng + (uint32_t)g->day * 0x9E3779B1u);
+}

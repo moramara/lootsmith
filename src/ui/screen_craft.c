@@ -103,7 +103,7 @@ void screen_craft(App *a) {
             char fx[24];
             trait_effect_text(lc->trait, lc->quality, fx, sizeof fx);
             if (fx[0]) {
-                txt_fit(TextFormat("%s %s", upper_txt(trait_name(lc->trait)), fx), 190, 320, 112, qc);
+                txt_fit(trait_label(lc, 112), 190, 320, 112, qc);
             } else {
                 txt("no special trait", 190, 320, C_DIM);
             }

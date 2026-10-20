@@ -276,10 +276,8 @@ void screen_guild(App *a) {
                 txt_fit(equip_name(e), 332, ry, 92, tc);
                 txt(quality_tag(e->quality), 428, ry, e->quality > QUALITY_COMMON ? quality_color(e->quality) : C_DIM);
                 {
-                    char fx[24];
-                    trait_effect_text(e->trait, e->quality, fx, sizeof fx);
-                    txt_fit(fx[0] ? TextFormat("%s %s", upper_txt(trait_name(e->trait)), fx) : "-", 466, ry, 110,
-                            fx[0] ? quality_color(e->quality) : C_DIM);
+                    const char *lab = trait_label(e, 110);
+                    txt_fit(lab[0] ? lab : "-", 466, ry, 110, lab[0] ? quality_color(e->quality) : C_DIM);
                 }
                 txt_r(TextFormat("%d%%", guild_item_fit(g, a->gl_sel, cand[j])), 612, ry, tc);
             }

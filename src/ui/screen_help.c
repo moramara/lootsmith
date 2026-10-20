@@ -6,7 +6,8 @@
  * "@CUSTOMERS" / "@UPGRADES" (単独の行: テーブルの 1 行につき 1 行へ展開される) と
  * "@MATS" (行の途中: 素材名) を、コンテンツテーブルから埋める。 */
 #define HELP_GEN_LINES                                                                                                 \
-    (CUST_TYPE_COUNT + UP_COUNT + GD_COUNT + BP_COUNT + QUALITY_COUNT + EQ_TRAIT_COUNT + RANK_COUNT + 8)
+    (CUST_TYPE_COUNT + UP_COUNT + GD_COUNT + BP_COUNT + QUALITY_COUNT + EQ_TRAIT_COUNT + RANK_COUNT +                  \
+     DRAGON_SCALE_USE_MAX + 8)
 
 #define HELP_LINE_LEN 160
 
@@ -67,8 +68,10 @@ static int help_build(const char **out, char (*store)[HELP_LINE_LEN]) {
                          QUALITY_DEFS[q].has_trait ? "  + one trait" : "");
                 out[n++] = store[sn++];
             }
-        } else if (!strcmp(l, "@TRAITS")) {
-            for (int t = EQ_TRAIT_NONE + 1; t < EQ_TRAIT_COUNT; t++) {
+        } else if (!strcmp(l, "@TRAITS") || !strcmp(l, "@DRAGONTRAITS")) {
+            bool dragon = !strcmp(l, "@DRAGONTRAITS"); /* 通常特性と Dragonforging の特性は、同じ書式で別々に並べる */
+            for (int t = dragon ? EQ_TRAIT_STANDARD_COUNT : EQ_TRAIT_NONE + 1;
+                 t < (dragon ? EQ_TRAIT_COUNT : EQ_TRAIT_STANDARD_COUNT); t++) {
                 char lo[24] = "", hi[24] = "";
                 for (int q = 0; q < QUALITY_COUNT; q++) {
                     if (QUALITY_DEFS[q].has_trait) {
@@ -79,6 +82,11 @@ static int help_build(const char **out, char (*store)[HELP_LINE_LEN]) {
                 snprintf(store[sn], HELP_LINE_LEN, "             %s: %s  (%s %s, %s %s)", TRAIT_DEFS[t].name,
                          TRAIT_DEFS[t].desc, QUALITY_DEFS[QUALITY_MASTERWORK].name, lo,
                          QUALITY_DEFS[QUALITY_LEGENDARY].name, hi);
+                out[n++] = store[sn++];
+            }
+        } else if (!strcmp(l, "@DRAGONODDS")) {
+            for (int u = 1; u <= DRAGON_SCALE_USE_MAX; u++) {
+                snprintf(store[sn], HELP_LINE_LEN, "             %d Dragon Scale: %d%%", u, dragon_trait_chance_pct(u));
                 out[n++] = store[sn++];
             }
         } else if (!strcmp(l, "@QUALITYODDS")) {

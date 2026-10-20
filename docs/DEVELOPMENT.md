@@ -143,8 +143,20 @@ UI の一覧、ヘルプ、セーブ/ロードはテーブルを読むので、�
 - **アクション関数は失敗したら状態を変えない。** 判断は何かに触れる前に行い、失敗は `Result` で返します。
 - **乱数ストリームは 3 本で、互いに消費しない。** (Dragon Hunt の抽選は `guild_rng`、市場更新は買える素材の数だけ `rng` を引く) `rng` (市場・客)、`guild_rng` (契約)、`craft_rng` (品質と特性)。`craft_rng` と `guild_rng`
   は初期シードから専用のソルトで導出し (`game_init()`)、他のストリームの値を変えません (テストが値を固定しています)。クラフトは
-  すべての検証 (`can_craft()`) を終えた後で、成功したときにだけ `craft_rng` を引きます (品質に 1 回、品質が特性を持つなら特性にもう 1 回)。
+  すべての検証 (`can_craft()`) を終えた後で、成功したときにだけ `craft_rng` を引きます (品質に 1 回、品質が特性を持つなら特性にもう 1 回。
+  Dragon Scale を使うレシピだけ、特性のある品質で判定の 1 回が加わる)。
   したがって、品質が市場価格、客の行列、契約の掲示板をずらすことはありません。
+- **特性 ID は追記のみ。通常特性の抽選範囲は `EQ_TRAIT_STANDARD_COUNT` で固定する。** `TraitDef` の行を足すときは、`simulation.h` の
+  `EQ_TRAIT_*` の *末尾* (`EQ_TRAIT_COUNT` の直前) に ID を追記し、既存の ID の値・順序・再利用を変えない (セーブは ID をそのまま保存する)。
+  通常クラフトの特性抽選は `trait_from_roll(rng_range(0, EQ_TRAIT_STANDARD_COUNT - 2))` で、`EQ_TRAIT_COUNT` を使ってはいけない:
+  `EQ_TRAIT_COUNT` を使うと、ID を足しただけで既存の抽選範囲・分布・同一シードでの結果が変わる。`EQ_TRAIT_STANDARD_COUNT` を変えるのは
+  通常の抽選に新しい特性を加えるときだけで、既存の結果がずれることを承知の上で、テストの固定値と一緒に更新する。
+  Dragonforging の特性は `TraitDef.dragon = 1` の行で、`EQ_TRAIT_STANDARD_COUNT` 以降の ID に限る (`content_validate_traits()` が検査)。
+  Dragon Scale を使っていない装備の `dragon` 特性は不正で、`equipment_apply_quality()` が拒否し `game_validate()` / セーブの読み込みが弾く。
+  確率は `DRAGON_TRAIT_PCT[使用数]` (使用数は `dragon_scale_uses()`: 主 2 + 副 1)、候補は `DRAGON_TRAIT_IDS` に集約する。
+  抽選の判定は純粋関数 (`chance_roll_hits()` / `dragon_trait_hits()` / `dragon_trait_from_roll()`) で、`craft_roll_trait()` がそれを組み立てる。
+  **`craft_rng` の消費は、Dragon Scale を使わないクラフトでは従来と同一** (品質 1 回 + 特性のある品質で通常特性 1 回)。Dragon Scale を使うときだけ、
+  特性のある品質で判定 1 回 (+ 当たりなら候補の選択 1 回、外れなら通常特性 1 回) を足す。市場・客の `rng` と `guild_rng` は引かない。
 - **能力値の補正はちょうど 1 回。** `equipment_compute_stats()` は基本能力 + Forge (品質なし) を返し、`equipment_build()` が
   基本 → 品質 → 特性を毎回ゼロから組み立てます。`equipment_apply_quality()` は、すでに品質や特性を持つアイテムを拒否するので、重ねがけになりません。
 - **ランクと解放は保存しない。** `guild_done` からの純粋関数です。

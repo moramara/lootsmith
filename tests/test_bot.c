@@ -149,6 +149,86 @@ int main(void) {
         (void)hit_cap;
     }
 
+    { /* Dragonforging: BOT が Dragon Hunt を遊んで到達した状態 (Mythic Smith) から、公開 API だけで Dragon Scale
+         を使ってクラフトする */
+        static const int recipes[3][2] = {{MAT_IRON, MAT_DRAGON_SCALE},
+                                          {MAT_DRAGON_SCALE, MAT_IRON},
+                                          {MAT_DRAGON_SCALE, MAT_DRAGON_SCALE}}; /* 使用数 1 / 2 / 3 */
+        long trials[3] = {0}, dragon[3] = {0}, hq[3] = {0};
+        long standard_trait_plain = 0, plain_hq = 0, dragon_cheap = 0;
+        for (uint32_t seed = 1; seed <= 12; ++seed) {
+            BotRunner r;
+            int h, m, b;
+            sandbox_run(seed, &r, &h, &m, &b);
+            for (int u = 0; u < 3; ++u) {
+                for (int n = 0; n < 400; ++n) {
+                    GameState g = r.game; /* BOT の最終状態のコピー。Forge 等はその状態のまま */
+                    g.status = ST_SANDBOX;
+                    g.craft_rng = (uint32_t)(seed * 7919u + (uint32_t)(u * 1000003 + n * 104729 + 1));
+                    g.mat_stock[MAT_DRAGON_SCALE] = 3;
+                    g.mat_cost[MAT_DRAGON_SCALE] = 0;
+                    g.mat_stock[MAT_IRON] = 3;
+                    g.mat_cost[MAT_IRON] = 30;
+                    uint32_t rng0 = g.rng, guild0 = g.guild_rng;
+                    int idx = -1;
+                    CHECK(craft_equipment(&g, EQ_WYRMCLEAVER, recipes[u][0], recipes[u][1], &idx) == R_OK);
+                    const Equipment *e = &g.inv[idx];
+                    CHECK(g.rng == rng0 && g.guild_rng == guild0); /* 市場・客・契約の乱数には触れない */
+                    CHECK(game_validate(&g));
+                    trials[u]++;
+                    if (!QUALITY_DEFS[e->quality].has_trait) {
+                        CHECK(e->trait == EQ_TRAIT_NONE);
+                        continue;
+                    }
+                    hq[u]++;
+                    if (e->trait >= EQ_TRAIT_STANDARD_COUNT) {
+                        dragon[u]++;
+                        /* FIT と推奨価格は、特性を含んだ最終能力から求まる */
+                        Equipment without = *e;
+                        if (e->trait == EQ_TRAIT_DRACONIC_EDGE) {
+                            without.atk -= TRAIT_DEFS[e->trait].amount[e->quality];
+                        } else {
+                            without.dur -= TRAIT_DEFS[e->trait].amount[e->quality];
+                        }
+                        equipment_price(&without);
+                        CHECK(equip_fit(CT_WYRM_HUNTER, e) >= equip_fit(CT_WYRM_HUNTER, &without));
+                        CHECK(e->rec_price >= without.rec_price);
+                        CHECK(e->rec_price == e->price);
+                        dragon_cheap += e->rec_price < 60; /* 高品質装備が極端に安価にならない */
+                    }
+                }
+            }
+            /* Dragon Scale を使わないクラフトでは、新特性は決して出ない */
+            for (int n = 0; n < 300; ++n) {
+                GameState g = r.game;
+                g.status = ST_SANDBOX;
+                g.craft_rng = (uint32_t)(seed * 104729u + (uint32_t)n + 17);
+                g.mat_stock[MAT_STEEL] = 3;
+                g.mat_cost[MAT_STEEL] = 36;
+                int idx = -1;
+                CHECK(craft_equipment(&g, EQ_WYRMCLEAVER, MAT_STEEL, MAT_STEEL, &idx) == R_OK);
+                if (QUALITY_DEFS[g.inv[idx].quality].has_trait) {
+                    plain_hq++;
+                    standard_trait_plain +=
+                        g.inv[idx].trait > EQ_TRAIT_NONE && g.inv[idx].trait < EQ_TRAIT_STANDARD_COUNT;
+                }
+            }
+        }
+        static const int pct[3] = {20, 30, 35};
+        for (int u = 0; u < 3; ++u) {
+            double f = 100.0 * (double)dragon[u] / (double)hq[u];
+            printf("dragonforging sweep: %d Dragon Scale -> %.1f%% dragon trait over %ld Masterwork/Legendary (target "
+                   "%d%%)\n",
+                   u + 1, f, hq[u], pct[u]);
+            CHECK(dragon[u] > 0);                        /* 特殊特性が実際に発生する */
+            CHECK(f > pct[u] - 4.0 && f < pct[u] + 4.0); /* 設定した確率が反映される (標本誤差の範囲) */
+        }
+        CHECK(dragon[0] < dragon[2] * 1.0 &&
+              (double)dragon[0] / (double)hq[0] < (double)dragon[2] / (double)hq[2]); /* 多いほど高い */
+        CHECK(plain_hq > 0 && standard_trait_plain == plain_hq); /* 通常素材だけ: 特性は必ず通常特性 */
+        CHECK(dragon_cheap == 0);
+    }
+
     printf("%d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

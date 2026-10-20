@@ -47,6 +47,7 @@ Color quality_color(int q);
 const char *quality_tag(int q);
 const char *equip_full_name(const Equipment *e);
 const char *trait_line(const Equipment *e);
+const char *trait_label(const Equipment *e, int maxw); /* 狭い欄用: 長い特性名は先頭の単語に縮める */
 void quality_frame(int q, int x, int y, int sc);
 const char *trend_txt(int now, int prev);
 Color trend_col(int now, int base);

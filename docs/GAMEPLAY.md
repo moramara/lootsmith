@@ -61,6 +61,33 @@ Forge の 1 レベルごとに 5 ポイントが Common から Fine へ移りま
 価値、推奨価格、FIT、売却の判定、ギルドの FIT 検査はすべて最終的な能力値を読みます。品質専用の価格式はありません。
 換金は従来どおり *原価* の 50% で、品質は関与しません。
 
+### Dragonforging (竜鱗鍛造): Dragon Scale の特殊特性
+
+Dragon Scale (Dragon Hunt の報酬。[下記](#dragon-hunt-と-dragon-scale-mythic-smith-以降のエンドゲーム)) を使ってクラフトした
+**Masterwork / Legendary** の装備には、通常の特性の代わりに、ドラゴン由来の特殊特性が付くことがあります。
+Dragon Scale を温存して契約の報酬や価値の高い装備に回すか、特殊特性の抽選に賭けて使うかを選べます。
+
+| 特性 | Masterwork | Legendary | 説明 |
+|---|---|---|---|
+| Draconic Edge | ATK +3 | ATK +4 | Dragon-forged edge: increased ATK. |
+| Wyrmscale | DUR +3 | DUR +4 | Wyrm scales reinforce the item: increased DUR. |
+
+- **抽選**: 品質が決まった後、Masterwork / Legendary のときだけ判定します (Common / Fine に特性は付かない)。
+  使う Dragon Scale は、**主素材なら 2 個、副素材なら 1 個** (主・副の両方なら 3 個)。使用数が多いほど確率が上がります。
+
+  | 使用する Dragon Scale | 特殊特性の確率 |
+  |---:|---:|
+  | 1 個 | 20% |
+  | 2 個 | 30% |
+  | 3 個 | 35% |
+
+  当たったら Draconic Edge と Wyrmscale が 50% ずつ。外れたら、従来どおり通常特性 5 種類 (Keen / Warding / Arcane / Sturdy /
+  Lightweight) から均等に 1 つ付きます。特殊特性は Masterwork / Legendary にだけ付き、**Dragon Scale を使わないクラフトには絶対に出ません**。
+  判定の値 (確率表と候補) は `DRAGON_TRAIT_PCT` / `DRAGON_TRAIT_IDS` (`content_tables.c`) にあります。
+- **効果の適用**: 通常の特性と同じ処理で、品質倍率の後に 1 回だけ加算されます。FIT・価値・推奨価格は特性を含んだ最終能力から求まります。
+  上乗せは通常特性より +1 大きい程度なので、特殊特性は「希少素材の小さなボーナス」です (Dragon Scale 自体の価値の優遇は上の「希少度ボーナス」)。
+- **表示**: 特性は在庫・納品・クラフト結果・客の画面に、通常の特性と同じ形式 (`TRAIT: DRACONIC EDGE (+4 ATK)`) で出ます。ヘルプ (F1) に仕組みの説明があります。
+
 ## ギルド契約
 
 販売とは別の第 2 のループです。契約を受注し、求められた装備をクラフトして納品し、ゴールドと評判を得ます。

@@ -77,7 +77,13 @@ enum {
     EQ_TRAIT_ARCANE,
     EQ_TRAIT_STURDY,
     EQ_TRAIT_LIGHTWEIGHT,
-    EQ_TRAIT_COUNT
+    /* ここから下は Dragonforging の特殊特性 (Dragon Scale を使った Masterwork / Legendary だけに付く)。ID は追記のみ */
+    EQ_TRAIT_DRACONIC_EDGE,
+    EQ_TRAIT_WYRMSCALE,
+    EQ_TRAIT_COUNT,
+    /* 通常の抽選 (trait_from_roll) の対象は EQ_TRAIT_NONE + 通常特性 5 つ = ここまで。EQ_TRAIT_COUNT が増えても、
+     * 通常クラフトの抽選範囲・乱数消費・分布はこの定数で固定される */
+    EQ_TRAIT_STANDARD_COUNT = EQ_TRAIT_LIGHTWEIGHT + 1
 };
 enum { PH_PREP, PH_OPEN, PH_SETTLE };
 enum { ST_PLAYING, ST_CLEARED, ST_FAILED, ST_SANDBOX };
@@ -192,7 +198,16 @@ typedef struct {
     const char *name, *desc;
     int stat;                  /* TraitStat */
     int amount[QUALITY_COUNT]; /* 品質ごとの変化量 (その品質に特性がない場合は 0) */
+    int dragon;                /* 1 = Dragonforging の特性: Dragon Scale を使った装備にだけ存在できる。0 が既定 */
 } TraitDef;
+
+/* Dragonforging: Dragon Scale を使った Masterwork / Legendary
+ * のクラフトは、通常特性の代わりに特殊特性が付くことがある。 使用数 (主素材 2 個 + 副素材 1 個。両方なら 3 個)
+ * ごとの確率 (パーセント) と、選ばれる特性は定義テーブルにある。 */
+#define DRAGON_SCALE_USE_MAX 3
+#define DRAGON_TRAIT_KINDS 2
+extern const int DRAGON_TRAIT_PCT[DRAGON_SCALE_USE_MAX + 1]; /* 添字 = Dragon Scale の使用数。[0] は常に 0 */
+extern const int DRAGON_TRAIT_IDS[DRAGON_TRAIT_KINDS];       /* 特殊特性が選ばれたときの候補 (均等) */
 
 /* 到達可能なあらゆる状態を保存でき、かつ読み込めるようにするための上限 (game_validate() も同じ数値で検証する)。
  * カウンタはオーバーフローせず飽和し、暦は MAX_DAY で止まる。 */
@@ -365,6 +380,9 @@ void game_init(GameState *g, uint32_t seed);
 int game_validate(const GameState *g); /* 1 = すべての不変条件が成り立つ */
 const char *content_validate(void);    /* NULL = すべてのコンテンツテーブルが整合している、それ以外はメッセージ */
 const char *content_validate_dragon_hunt(const DragonHuntDef *h); /* 任意の Dragon Hunt 定義の検査 (NULL = 妥当) */
+const char *content_validate_traits(const TraitDef defs[EQ_TRAIT_COUNT]); /* 任意の特性テーブルの検査 (NULL = 妥当) */
+const char *content_validate_dragon_forging(const int pct[DRAGON_SCALE_USE_MAX + 1],
+                                            const int ids[DRAGON_TRAIT_KINDS]); /* 任意の表の検査 (NULL = 妥当) */
 const char *content_validate_blueprints(const GuildRankDef *ranks, int n_rank, const BlueprintDef *bps,
                                         int n_bp); /* EQUIPS / CUSTOMER_DEFS を使う */
 /* 任意のテーブルに対する同じ検査 (不正な行が拒否されることをテストで示せるようにする) */
@@ -385,7 +403,13 @@ void equipment_compute_stats(Equipment *e,
  *   quality_rates()       ギルドランクと Forge レベルに応じた確率 (パーセント、合計 100)。Forge は 1 レベルにつき
  *                         5 ポイントを Common から Fine へ移すが、Common の残りを超えては移さない
  *   quality_from_roll()   ロール 0..99 -> 品質 (Common が最も低いロール、Legendary が最も高いロールを取る)
- *   trait_from_roll()     ロール 0..EQ_TRAIT_COUNT-2 -> 特性 ID (EQ_TRAIT_NONE にはならない)
+ *   trait_from_roll()     ロール 0..EQ_TRAIT_STANDARD_COUNT-2 -> 通常特性の ID (EQ_TRAIT_NONE にも特殊特性にもならない)
+ *   dragon_scale_uses()   レシピ (主, 副) が使う Dragon Scale の数 0..3
+ *   chance_roll_hits()    確率 pct (%) のロール 0..99 の判定: roll < pct (範囲外のロールは丸める。pct <= 0
+ * は決して当たらず、100 以上は必ず当たる) dragon_trait_chance_pct() / dragon_trait_hits()   使用数 -> 特殊特性の確率 /
+ * ロール 0..99 が当たりか dragon_trait_from_roll()  ロール 0..DRAGON_TRAIT_KINDS-1 -> 特殊特性の ID (均等)
+ *   craft_roll_trait()    craft_equipment() が使う特性の抽選 (craft_rng だけを引く)。Dragon Scale
+ * を使わない、または特性のない 品質では、従来と同じ乱数消費 (特性ありの品質で 1 回、それ以外 0 回)
  *   equipment_apply_quality()  equipment_compute_stats() が出したばかりの能力に品質と特性を反映する。
  *                         アイテムがすでに品質/特性を持つ場合や組み合わせが不正な場合は拒否する
  *                         (0 を返し、e には触れない) ので、二重に適用されることはない
@@ -393,6 +417,12 @@ void equipment_compute_stats(Equipment *e,
 void quality_rates(int rank, int forge_level, int out[QUALITY_COUNT]);
 int quality_from_roll(int rank, int forge_level, int roll);
 int trait_from_roll(int roll);
+int chance_roll_hits(int pct, int roll);
+int dragon_scale_uses(int main, int sub);
+int dragon_trait_chance_pct(int uses);
+int dragon_trait_hits(int uses, int roll);
+int dragon_trait_from_roll(int roll);
+int craft_roll_trait(uint32_t *craft_rng, int quality, int main, int sub);
 int equipment_apply_quality(Equipment *e, int quality, int trait);
 void equipment_build(Equipment *e, int forge_level, int quality, int trait);
 void trait_effect_text(int trait, int quality, char *buf, size_t n); /* 例: "+2 ATK"、"-1 WT"。なければ空文字列 */

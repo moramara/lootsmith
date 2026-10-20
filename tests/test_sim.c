@@ -3866,7 +3866,8 @@ static void test_quality_tables(void) {
     CHECK_EQ(QUALITY_COMMON, 0);
     CHECK_EQ(EQ_TRAIT_NONE, 0); /* ゼロ初期化されたデータは、有効な無印のアイテム */
     CHECK_EQ(QUALITY_COUNT, 4);
-    CHECK_EQ(EQ_TRAIT_COUNT, 6); /* 品質 4 つ、特性 5 つ + なし */
+    CHECK_EQ(EQ_TRAIT_STANDARD_COUNT, 6); /* 通常の抽選の対象: 通常特性 5 つ + なし (ID の追記では変わらない) */
+    CHECK_EQ(EQ_TRAIT_COUNT, 8);          /* 通常特性 5 つ + なし + Dragonforging の特殊特性 2 つ */
     static const struct {
         const char *name;
         int mult, has;
@@ -3879,7 +3880,8 @@ static void test_quality_tables(void) {
     }
     CHECK(!strcmp(quality_name(-1), "?"));
     CHECK(!strcmp(quality_name(QUALITY_COUNT), "?"));
-    static const char *tn[] = {"None", "Keen", "Warding", "Arcane", "Sturdy", "Lightweight"};
+    static const char *tn[] = {"None",   "Keen",        "Warding",       "Arcane",
+                               "Sturdy", "Lightweight", "Draconic Edge", "Wyrmscale"};
     for (int t = 0; t < EQ_TRAIT_COUNT; t++) {
         CHECK(!strcmp(TRAIT_DEFS[t].name, tn[t]));
         CHECK(!strcmp(trait_name(t), tn[t]));
@@ -3891,7 +3893,7 @@ static void test_quality_tables(void) {
     CHECK_EQ(TRAIT_DEFS[EQ_TRAIT_ARCANE].stat, TS_MAG);
     CHECK_EQ(TRAIT_DEFS[EQ_TRAIT_STURDY].stat, TS_DUR);
     CHECK_EQ(TRAIT_DEFS[EQ_TRAIT_LIGHTWEIGHT].stat, TS_WT_DOWN);
-    for (int t = EQ_TRAIT_KEEN; t < EQ_TRAIT_COUNT; t++) {
+    for (int t = EQ_TRAIT_KEEN; t < EQ_TRAIT_STANDARD_COUNT; t++) { /* 通常特性 (既存の仕様のまま) */
         int mw = t == EQ_TRAIT_LIGHTWEIGHT ? 1 : 2, lg = t == EQ_TRAIT_LIGHTWEIGHT ? 2 : 3;
         CHECK_EQ(TRAIT_DEFS[t].amount[QUALITY_COMMON], 0);
         CHECK_EQ(TRAIT_DEFS[t].amount[QUALITY_FINE], 0);
@@ -4035,13 +4037,16 @@ static void test_quality_from_roll(void) {
     CHECK_EQ(guild_rank(30), RANK_GRANDMASTER);
     /* 特性: ロールは 5 つの実在の特性のどれかを選び、「なし」は決して選ばない */
     int hit[EQ_TRAIT_COUNT] = {0};
-    for (int roll = 0; roll < EQ_TRAIT_COUNT - 1; roll++) {
+    for (int roll = 0; roll < EQ_TRAIT_STANDARD_COUNT - 1; roll++) {
         int t = trait_from_roll(roll);
-        CHECK(t > EQ_TRAIT_NONE && t < EQ_TRAIT_COUNT);
+        CHECK(t > EQ_TRAIT_NONE && t < EQ_TRAIT_STANDARD_COUNT);
         hit[t]++;
     }
-    for (int t = 1; t < EQ_TRAIT_COUNT; t++) {
+    for (int t = 1; t < EQ_TRAIT_STANDARD_COUNT; t++) {
         CHECK_EQ(hit[t], 1);
+    }
+    for (int t = EQ_TRAIT_STANDARD_COUNT; t < EQ_TRAIT_COUNT; t++) {
+        CHECK_EQ(hit[t], 0); /* 通常の抽選は、特殊特性を決して選ばない */
     }
     CHECK_EQ(trait_from_roll(-3), EQ_TRAIT_KEEN);
     CHECK_EQ(trait_from_roll(1000), EQ_TRAIT_LIGHTWEIGHT);
@@ -4114,6 +4119,9 @@ static void test_quality_stats(void) {
                     for (int q = 0; q < QUALITY_COUNT; q++) {
                         for (int t = 0; t < EQ_TRAIT_COUNT; t++) {
                             int legal = (QUALITY_DEFS[q].has_trait != 0) == (t != EQ_TRAIT_NONE);
+                            if (t >= EQ_TRAIT_STANDARD_COUNT && mm != MAT_DRAGON_SCALE && sm != MAT_DRAGON_SCALE) {
+                                legal = 0; /* 特殊特性は Dragon Scale を使った装備だけ */
+                            }
                             Equipment x;
                             memset(&x, 0, sizeof x);
                             x.type = eq;
@@ -4132,7 +4140,16 @@ static void test_quality_stats(void) {
                                 eu = qmul(base.dur, mult), ew = base.wt;
                             int amt = q == QUALITY_MASTERWORK ? (t == EQ_TRAIT_LIGHTWEIGHT ? 1 : 2)
                                                               : (t == EQ_TRAIT_LIGHTWEIGHT ? 2 : 3);
+                            if (t >= EQ_TRAIT_STANDARD_COUNT) {
+                                amt = q == QUALITY_MASTERWORK ? 3 : 4; /* Draconic Edge / Wyrmscale: +3 / +4 */
+                            }
                             switch (t) {
+                                case EQ_TRAIT_DRACONIC_EDGE:
+                                    ea += amt;
+                                    break;
+                                case EQ_TRAIT_WYRMSCALE:
+                                    eu += amt;
+                                    break;
                                 case EQ_TRAIT_KEEN:
                                     ea += amt;
                                     break;
@@ -4442,8 +4459,8 @@ static void test_craft_quality_flow(void) {
             n % EQ_WYRMCLEAVER; /* Grandmaster (30 件) で解放済みの装備すべて。Wyrmcleaver は Mythic の別テストで */
         CHECK_EQ(craft_equipment(&g, eq, MAT_IRON, MAT_WOOD, &idx), R_OK);
         int want_q = quality_from_roll(guild_rank(before.guild_done), before.up_level[UP_FORGE], rng_range(&t, 0, 99));
-        int want_t =
-            QUALITY_DEFS[want_q].has_trait ? trait_from_roll(rng_range(&t, 0, EQ_TRAIT_COUNT - 2)) : EQ_TRAIT_NONE;
+        int want_t = QUALITY_DEFS[want_q].has_trait ? trait_from_roll(rng_range(&t, 0, EQ_TRAIT_STANDARD_COUNT - 2))
+                                                    : EQ_TRAIT_NONE;
         const Equipment *e = &g.inv[idx];
         CHECK_EQ(e->quality, want_q);
         CHECK_EQ(e->trait, want_t);
@@ -4473,8 +4490,11 @@ static void test_craft_quality_flow(void) {
     for (int q = 0; q < QUALITY_COUNT; q++) {
         CHECK(seen_q[q] > 0); /* Grandmaster + Forge 2 はすべての品質を生む ... */
     }
-    for (int t = 0; t < EQ_TRAIT_COUNT; t++) {
-        CHECK(seen_t[t] > 0); /* ... そしてすべての特性も (固定シード: 決定的) */
+    for (int t = 0; t < EQ_TRAIT_STANDARD_COUNT; t++) {
+        CHECK(seen_t[t] > 0); /* ... そしてすべての通常特性も (固定シード: 決定的) */
+    }
+    for (int t = EQ_TRAIT_STANDARD_COUNT; t < EQ_TRAIT_COUNT; t++) {
+        CHECK_EQ(seen_t[t], 0); /* Dragon Scale を使わない通常クラフトに、特殊特性は絶対に出ない */
     }
     CHECK_EQ(seen_t[EQ_TRAIT_NONE],
              seen_q[QUALITY_COMMON] + seen_q[QUALITY_FINE]); /* 特性を持つのは Masterwork / Legendary だけ */
@@ -4631,6 +4651,9 @@ static void test_quality_validate(void) {
             x.inv[0].quality = q;
             x.inv[0].trait = t;
             int ok = QUALITY_DEFS[q].has_trait ? t != EQ_TRAIT_NONE : t == EQ_TRAIT_NONE;
+            if (t >= EQ_TRAIT_STANDARD_COUNT) {
+                ok = 0; /* Iron 製の装備に Dragonforging の特性は付けられない */
+            }
             CHECK_EQ(game_validate(&x), ok);
         }
     }
@@ -6169,7 +6192,16 @@ static void test_mythic_smith(void) {
                     int roll_q = quality_from_roll(RANK_MYTHIC, forge, rng_range(&tr, 0, 99));
                     CHECK_EQ(roll_q, q);
                     if (QUALITY_DEFS[q].has_trait) {
-                        CHECK_EQ(e->trait, trait_from_roll(rng_range(&tr, 0, EQ_TRAIT_COUNT - 2)));
+                        int uses = (main == MAT_DRAGON_SCALE ? 2 : 0) + (sub == MAT_DRAGON_SCALE ? 1 : 0);
+                        int want_t;
+                        if (uses > 0 && rng_range(&tr, 0, 99) < DRAGON_TRAIT_PCT[uses]) {
+                            /* Dragon Scale を使う場合だけ、先に特殊特性の判定 (0..99) を 1 回引き、当たりなら 50% ずつ
+                             */
+                            want_t = rng_range(&tr, 0, 1) == 0 ? EQ_TRAIT_DRACONIC_EDGE : EQ_TRAIT_WYRMSCALE;
+                        } else {
+                            want_t = trait_from_roll(rng_range(&tr, 0, EQ_TRAIT_STANDARD_COUNT - 2));
+                        }
+                        CHECK_EQ(e->trait, want_t);
                     }
                     CHECK_EQ(c.craft_rng, tr);
                     CHECK_EQ(c.rng, before.rng);
@@ -7559,6 +7591,606 @@ static void test_dragon_save(void) {
     free(t);
 }
 
+/* =====================================================================================================
+ * Dragonforging (第 3 弾コンテンツ): Dragon Scale を使った Masterwork / Legendary の特殊特性
+ * ===================================================================================================== */
+static int expected_pct(int uses) { /* 仕様の確率 (テーブルとは独立に書いた期待値) */
+    return uses == 1 ? 20 : uses == 2 ? 30 : uses == 3 ? 35 : 0;
+}
+
+/* 「この craft_rng から始まるクラフトが、指定の品質・特殊特性判定になる」最初のシードを探す
+ * (ゲームと同じ純粋関数で再現)。 hit: -1 = 判定なし (Dragon Scale を使わない)、0 = 外れ、1 = 当たり。pick:
+ * 当たりのときの候補 (0 = Draconic Edge) */
+static uint32_t find_craft_seed(int rank, int forge, int quality, int uses, int hit, int pick) {
+    for (uint32_t s = 1; s < 3000000; s++) {
+        uint32_t t = s;
+        if (quality_from_roll(rank, forge, rng_range(&t, 0, 99)) != quality) {
+            continue;
+        }
+        if (hit < 0) {
+            return s;
+        }
+        int r = rng_range(&t, 0, 99);
+        int h = r < expected_pct(uses);
+        if (h != hit) {
+            continue;
+        }
+        if (h && rng_range(&t, 0, 1) != pick) {
+            continue;
+        }
+        return s;
+    }
+    printf("  FAIL find_craft_seed: no seed (q=%d uses=%d hit=%d pick=%d)\n", quality, uses, hit, pick);
+    g_fails++;
+    return 1;
+}
+
+static void test_dragon_trait_tables(void) {
+    puts("dragon_trait_tables");
+    CHECK(content_validate() == NULL);
+    /* 既存の特性 ID は変わらない (新 ID は末尾に追記) */
+    CHECK_EQ(EQ_TRAIT_NONE, 0);
+    CHECK_EQ(EQ_TRAIT_KEEN, 1);
+    CHECK_EQ(EQ_TRAIT_WARDING, 2);
+    CHECK_EQ(EQ_TRAIT_ARCANE, 3);
+    CHECK_EQ(EQ_TRAIT_STURDY, 4);
+    CHECK_EQ(EQ_TRAIT_LIGHTWEIGHT, 5);
+    CHECK_EQ(EQ_TRAIT_DRACONIC_EDGE, 6);
+    CHECK_EQ(EQ_TRAIT_WYRMSCALE, 7);
+    CHECK_EQ(EQ_TRAIT_COUNT, 8);
+    CHECK_EQ(EQ_TRAIT_STANDARD_COUNT, 6);
+    /* 名前・説明・効果 (Common / Fine は 0、Masterwork +3、Legendary +4) */
+    const TraitDef *de = &TRAIT_DEFS[EQ_TRAIT_DRACONIC_EDGE], *ws = &TRAIT_DEFS[EQ_TRAIT_WYRMSCALE];
+    CHECK(!strcmp(de->name, "Draconic Edge"));
+    CHECK(!strcmp(de->desc, "Dragon-forged edge: increased ATK."));
+    CHECK(!strcmp(ws->name, "Wyrmscale"));
+    CHECK(!strcmp(ws->desc, "Wyrm scales reinforce the item: increased DUR."));
+    CHECK(!strcmp(trait_name(EQ_TRAIT_DRACONIC_EDGE), "Draconic Edge"));
+    CHECK(!strcmp(trait_name(EQ_TRAIT_WYRMSCALE), "Wyrmscale"));
+    CHECK_EQ(de->stat, TS_ATK);
+    CHECK_EQ(ws->stat, TS_DUR);
+    CHECK_EQ(de->dragon, 1);
+    CHECK_EQ(ws->dragon, 1);
+    for (int t = 0; t < EQ_TRAIT_STANDARD_COUNT; t++) {
+        CHECK_EQ(TRAIT_DEFS[t].dragon, 0);
+    }
+    int want[QUALITY_COUNT] = {0, 0, 3, 4};
+    for (int q = 0; q < QUALITY_COUNT; q++) {
+        CHECK_EQ(de->amount[q], want[q]);
+        CHECK_EQ(ws->amount[q], want[q]);
+    }
+    char buf[24];
+    trait_effect_text(EQ_TRAIT_DRACONIC_EDGE, QUALITY_MASTERWORK, buf, sizeof buf);
+    CHECK(!strcmp(buf, "+3 ATK"));
+    trait_effect_text(EQ_TRAIT_DRACONIC_EDGE, QUALITY_LEGENDARY, buf, sizeof buf);
+    CHECK(!strcmp(buf, "+4 ATK"));
+    trait_effect_text(EQ_TRAIT_WYRMSCALE, QUALITY_MASTERWORK, buf, sizeof buf);
+    CHECK(!strcmp(buf, "+3 DUR"));
+    trait_effect_text(EQ_TRAIT_WYRMSCALE, QUALITY_LEGENDARY, buf, sizeof buf);
+    CHECK(!strcmp(buf, "+4 DUR"));
+    trait_effect_text(EQ_TRAIT_WYRMSCALE, QUALITY_COMMON, buf, sizeof buf);
+    CHECK(!strcmp(buf, ""));
+    trait_effect_text(EQ_TRAIT_DRACONIC_EDGE, QUALITY_FINE, buf, sizeof buf);
+    CHECK(!strcmp(buf, ""));
+    /* 抽選の表 */
+    for (int u = 0; u <= DRAGON_SCALE_USE_MAX; u++) {
+        CHECK_EQ(DRAGON_TRAIT_PCT[u], expected_pct(u));
+        CHECK_EQ(dragon_trait_chance_pct(u), expected_pct(u));
+    }
+    CHECK_EQ(dragon_trait_chance_pct(-5), 0); /* 範囲外の使用数は丸める */
+    CHECK_EQ(dragon_trait_chance_pct(99), 35);
+    CHECK_EQ(DRAGON_TRAIT_IDS[0], EQ_TRAIT_DRACONIC_EDGE);
+    CHECK_EQ(DRAGON_TRAIT_IDS[1], EQ_TRAIT_WYRMSCALE);
+    CHECK(content_validate_dragon_forging(DRAGON_TRAIT_PCT, DRAGON_TRAIT_IDS) == NULL);
+
+    /* 不正な特性定義は content_validate が検出する */
+    TraitDef t[EQ_TRAIT_COUNT];
+    memcpy(t, TRAIT_DEFS, sizeof t);
+    CHECK(content_validate_traits(t) == NULL);
+    t[EQ_TRAIT_DRACONIC_EDGE].amount[QUALITY_COMMON] = 1; /* Common に効果がある */
+    CHECK(content_validate_traits(t) != NULL);
+    memcpy(t, TRAIT_DEFS, sizeof t);
+    t[EQ_TRAIT_WYRMSCALE].amount[QUALITY_FINE] = 2;
+    CHECK(content_validate_traits(t) != NULL);
+    memcpy(t, TRAIT_DEFS, sizeof t);
+    t[EQ_TRAIT_WYRMSCALE].amount[QUALITY_LEGENDARY] = 0; /* Legendary に効果がない */
+    CHECK(content_validate_traits(t) != NULL);
+    memcpy(t, TRAIT_DEFS, sizeof t);
+    t[EQ_TRAIT_DRACONIC_EDGE].amount[QUALITY_MASTERWORK] = -3;
+    CHECK(content_validate_traits(t) != NULL);
+    memcpy(t, TRAIT_DEFS, sizeof t);
+    t[EQ_TRAIT_DRACONIC_EDGE].stat = 99;
+    CHECK(content_validate_traits(t) != NULL);
+    memcpy(t, TRAIT_DEFS, sizeof t);
+    t[EQ_TRAIT_WYRMSCALE].name = TRAIT_DEFS[EQ_TRAIT_DRACONIC_EDGE].name; /* 名前の重複 */
+    CHECK(content_validate_traits(t) != NULL);
+    memcpy(t, TRAIT_DEFS, sizeof t);
+    t[EQ_TRAIT_WYRMSCALE].desc = "";
+    CHECK(content_validate_traits(t) != NULL);
+    memcpy(t, TRAIT_DEFS, sizeof t);
+    t[EQ_TRAIT_WYRMSCALE].dragon = 0; /* 特殊特性の印が外れている */
+    CHECK(content_validate_traits(t) != NULL);
+    memcpy(t, TRAIT_DEFS, sizeof t);
+    t[EQ_TRAIT_KEEN].dragon = 1; /* 通常特性が特殊扱い */
+    CHECK(content_validate_traits(t) != NULL);
+    memcpy(t, TRAIT_DEFS, sizeof t);
+    t[EQ_TRAIT_WYRMSCALE].dragon = 2;
+    CHECK(content_validate_traits(t) != NULL);
+    /* 抽選表の不正 */
+    int pct[DRAGON_SCALE_USE_MAX + 1], ids[DRAGON_TRAIT_KINDS];
+    memcpy(pct, DRAGON_TRAIT_PCT, sizeof pct);
+    memcpy(ids, DRAGON_TRAIT_IDS, sizeof ids);
+    pct[0] = 5; /* Scale なしで確率がある */
+    CHECK(content_validate_dragon_forging(pct, ids) != NULL);
+    memcpy(pct, DRAGON_TRAIT_PCT, sizeof pct);
+    pct[2] = 101;
+    CHECK(content_validate_dragon_forging(pct, ids) != NULL);
+    memcpy(pct, DRAGON_TRAIT_PCT, sizeof pct);
+    pct[1] = -1;
+    CHECK(content_validate_dragon_forging(pct, ids) != NULL);
+    memcpy(pct, DRAGON_TRAIT_PCT, sizeof pct);
+    pct[3] = 25; /* 使用数が多いのに確率が下がる */
+    CHECK(content_validate_dragon_forging(pct, ids) != NULL);
+    memcpy(pct, DRAGON_TRAIT_PCT, sizeof pct);
+    pct[1] = 0;
+    pct[2] = 0;
+    pct[3] = 100; /* 0% と 100% の端は有効 */
+    CHECK(content_validate_dragon_forging(pct, ids) == NULL);
+    ids[1] = EQ_TRAIT_KEEN; /* 通常特性は候補にできない */
+    CHECK(content_validate_dragon_forging(pct, ids) != NULL);
+    ids[1] = EQ_TRAIT_DRACONIC_EDGE; /* 重複 (Wyrmscale が候補に入らない) */
+    CHECK(content_validate_dragon_forging(pct, ids) != NULL);
+    ids[1] = EQ_TRAIT_COUNT;
+    CHECK(content_validate_dragon_forging(pct, ids) != NULL);
+    CHECK(content_validate_dragon_forging(NULL, ids) != NULL);
+}
+
+static void test_dragon_trait_apply(void) {
+    puts("dragon_trait_apply");
+    static const struct {
+        int trait, q, atk, dur;
+    } cases[] = {{EQ_TRAIT_DRACONIC_EDGE, QUALITY_MASTERWORK, 3, 0},
+                 {EQ_TRAIT_DRACONIC_EDGE, QUALITY_LEGENDARY, 4, 0},
+                 {EQ_TRAIT_WYRMSCALE, QUALITY_MASTERWORK, 0, 3},
+                 {EQ_TRAIT_WYRMSCALE, QUALITY_LEGENDARY, 0, 4}};
+    static const int recipes[][2] = {
+        {MAT_DRAGON_SCALE, MAT_IRON}, {MAT_IRON, MAT_DRAGON_SCALE}, {MAT_DRAGON_SCALE, MAT_DRAGON_SCALE}};
+    for (int forge = 0; forge <= 2; forge++) {
+        for (unsigned r = 0; r < sizeof recipes / sizeof *recipes; r++) {
+            for (unsigned c = 0; c < sizeof cases / sizeof *cases; c++) {
+                Equipment base;
+                memset(&base, 0, sizeof base);
+                base.type = EQ_WYRMCLEAVER;
+                base.main = recipes[r][0];
+                base.sub = recipes[r][1];
+                equipment_compute_stats(&base, forge);
+                Equipment x = base;
+                CHECK_EQ(equipment_apply_quality(&x, cases[c].q, cases[c].trait), 1);
+                int mult = QUALITY_DEFS[cases[c].q].mult_pm;
+                /* 品質倍率の後で、特性を 1 回だけ足す。能力値の残りは倍率だけ */
+                CHECK_EQ(x.atk, qmul(base.atk, mult) + cases[c].atk);
+                CHECK_EQ(x.dur, qmul(base.dur, mult) + cases[c].dur);
+                CHECK_EQ(x.def, qmul(base.def, mult));
+                CHECK_EQ(x.mag, qmul(base.mag, mult));
+                CHECK_EQ(x.wt, base.wt);
+                CHECK_EQ(x.quality, cases[c].q);
+                CHECK_EQ(x.trait, cases[c].trait);
+                /* 再適用は拒否され、何も累積しない */
+                Equipment again = x;
+                CHECK_EQ(equipment_apply_quality(&again, cases[c].q, cases[c].trait), 0);
+                CHECK(!memcmp(&again, &x, sizeof x));
+                /* 作り直しても同じ (累積しない) */
+                Equipment rebuilt = x;
+                equipment_build(&rebuilt, forge, cases[c].q, cases[c].trait);
+                CHECK_EQ(rebuilt.atk, x.atk);
+                CHECK_EQ(rebuilt.dur, x.dur);
+                equipment_build(&rebuilt, forge, cases[c].q, cases[c].trait);
+                CHECK_EQ(rebuilt.atk, x.atk);
+                CHECK_EQ(rebuilt.dur, x.dur);
+            }
+        }
+    }
+    /* Common / Fine には特殊特性が付かない (どちらも、特性ありの品質ではない) */
+    for (int t = EQ_TRAIT_DRACONIC_EDGE; t <= EQ_TRAIT_WYRMSCALE; t++) {
+        for (int q = QUALITY_COMMON; q <= QUALITY_FINE; q++) {
+            Equipment x;
+            memset(&x, 0, sizeof x);
+            x.type = EQ_WYRMCLEAVER;
+            x.main = MAT_DRAGON_SCALE;
+            x.sub = MAT_DRAGON_SCALE;
+            equipment_compute_stats(&x, 0);
+            Equipment before = x;
+            CHECK_EQ(equipment_apply_quality(&x, q, t), 0);
+            CHECK(!memcmp(&x, &before, sizeof x));
+            equipment_build(&x, 0, q, t); /* 不正な組み合わせは無印の Common になる */
+            CHECK_EQ(x.quality, QUALITY_COMMON);
+            CHECK_EQ(x.trait, EQ_TRAIT_NONE);
+        }
+        /* Masterwork / Legendary でも、特性なしは不正 (既存の規則のまま) */
+        Equipment y;
+        memset(&y, 0, sizeof y);
+        y.main = y.sub = MAT_DRAGON_SCALE;
+        equipment_compute_stats(&y, 0);
+        CHECK_EQ(equipment_apply_quality(&y, QUALITY_MASTERWORK, EQ_TRAIT_NONE), 0);
+    }
+    /* Dragon Scale を使わない装備に、特殊特性は付けられない */
+    for (int t = EQ_TRAIT_DRACONIC_EDGE; t <= EQ_TRAIT_WYRMSCALE; t++) {
+        for (int q = QUALITY_MASTERWORK; q <= QUALITY_LEGENDARY; q++) {
+            Equipment x;
+            memset(&x, 0, sizeof x);
+            x.type = EQ_SWORD;
+            x.main = MAT_STEEL;
+            x.sub = MAT_OBSIDIAN;
+            equipment_compute_stats(&x, 1);
+            Equipment before = x;
+            CHECK_EQ(equipment_apply_quality(&x, q, t), 0);
+            CHECK(!memcmp(&x, &before, sizeof x));
+            equipment_build(&x, 1, q, t);
+            CHECK_EQ(x.quality, QUALITY_COMMON);
+            CHECK_EQ(x.trait, EQ_TRAIT_NONE);
+        }
+    }
+    /* 範囲外の特性 ID は拒否 */
+    Equipment bad;
+    memset(&bad, 0, sizeof bad);
+    bad.main = MAT_DRAGON_SCALE;
+    equipment_compute_stats(&bad, 0);
+    CHECK_EQ(equipment_apply_quality(&bad, QUALITY_MASTERWORK, EQ_TRAIT_COUNT), 0);
+    CHECK_EQ(equipment_apply_quality(&bad, QUALITY_MASTERWORK, -1), 0);
+    /* 通常特性は Dragon Scale を使っても従来どおり付く */
+    Equipment k;
+    memset(&k, 0, sizeof k);
+    k.main = MAT_DRAGON_SCALE;
+    k.sub = MAT_IRON;
+    equipment_compute_stats(&k, 0);
+    CHECK_EQ(equipment_apply_quality(&k, QUALITY_MASTERWORK, EQ_TRAIT_KEEN), 1);
+}
+
+static void test_dragon_trait_roll(void) {
+    puts("dragon_trait_roll");
+    /* Dragon Scale の使用数: 主 2、副 1、両方で 3 */
+    CHECK_EQ(dragon_scale_uses(MAT_IRON, MAT_IRON), 0);
+    CHECK_EQ(dragon_scale_uses(MAT_DRAGON_SCALE, MAT_IRON), 2);
+    CHECK_EQ(dragon_scale_uses(MAT_IRON, MAT_DRAGON_SCALE), 1);
+    CHECK_EQ(dragon_scale_uses(MAT_DRAGON_SCALE, MAT_DRAGON_SCALE), 3);
+    CHECK_EQ(dragon_scale_uses(-1, MAT_COUNT + 3), 0);
+    /* 確率の境界: 使用数 1/2/3 は roll < 20/30/35 */
+    static const int pct[4] = {0, 20, 30, 35};
+    for (int u = 0; u <= 3; u++) {
+        int hits = 0;
+        for (int roll = 0; roll < 100; roll++) {
+            int h = dragon_trait_hits(u, roll);
+            CHECK_EQ(h, roll < pct[u]);
+            hits += h;
+        }
+        CHECK_EQ(hits, pct[u]); /* 100 通りのロールのうち、ちょうど pct 通りが当たり */
+        if (pct[u] > 0) {
+            CHECK(dragon_trait_hits(u, pct[u] - 1));
+            CHECK(!dragon_trait_hits(u, pct[u]));
+        }
+        CHECK(dragon_trait_hits(u, -1) == (pct[u] > 0)); /* 範囲外は 0..99 に丸める */
+        CHECK(!dragon_trait_hits(u, 100));
+        CHECK(!dragon_trait_hits(u, 1000000));
+    }
+    CHECK(!dragon_trait_hits(0, 0)); /* Dragon Scale なしは、どのロールでも当たらない */
+    /* 0% / 100% 相当 */
+    for (int roll = -3; roll <= 103; roll++) {
+        CHECK(!chance_roll_hits(0, roll));
+        CHECK(!chance_roll_hits(-5, roll));
+        CHECK(chance_roll_hits(100, roll)); /* 100% 以上は、どのロール (範囲外は丸める) でも必ず当たる */
+        CHECK(chance_roll_hits(101, roll));
+    }
+    CHECK(chance_roll_hits(100, 99)); /* 100% は最大のロール (99) でも当たり */
+    CHECK(chance_roll_hits(100, 0));
+    CHECK(!chance_roll_hits(1, 1));
+    CHECK(chance_roll_hits(1, 0));
+    CHECK(chance_roll_hits(50, 49));
+    CHECK(!chance_roll_hits(50, 50));
+    /* 特殊特性が選ばれたときの内訳は均等 (2 択) */
+    CHECK_EQ(dragon_trait_from_roll(0), EQ_TRAIT_DRACONIC_EDGE);
+    CHECK_EQ(dragon_trait_from_roll(1), EQ_TRAIT_WYRMSCALE);
+    CHECK_EQ(dragon_trait_from_roll(-4), EQ_TRAIT_DRACONIC_EDGE);
+    CHECK_EQ(dragon_trait_from_roll(9), EQ_TRAIT_WYRMSCALE);
+    /* 外れたときは、従来どおりの通常特性 (5 択) だけ。新特性は決して出ない */
+    int seen[EQ_TRAIT_COUNT] = {0};
+    for (int roll = -2; roll < 20; roll++) {
+        int t = trait_from_roll(roll);
+        CHECK(t >= EQ_TRAIT_KEEN && t <= EQ_TRAIT_LIGHTWEIGHT);
+        seen[t]++;
+    }
+    CHECK_EQ(seen[EQ_TRAIT_DRACONIC_EDGE] + seen[EQ_TRAIT_WYRMSCALE], 0);
+}
+
+/* craft_roll_trait: 乱数の消費量と結果を、仕様の手順どおりに再現して照合する */
+static void test_dragon_trait_stream(void) {
+    puts("dragon_trait_stream");
+    static const int recipes[][2] = {{MAT_IRON, MAT_IRON},
+                                     {MAT_STEEL, MAT_OBSIDIAN},
+                                     {MAT_DRAGON_SCALE, MAT_IRON},
+                                     {MAT_IRON, MAT_DRAGON_SCALE},
+                                     {MAT_DRAGON_SCALE, MAT_DRAGON_SCALE}};
+    int dragon_seen = 0, standard_with_scale = 0;
+    for (uint32_t s = 1; s <= 4000; s++) {
+        for (unsigned r = 0; r < sizeof recipes / sizeof *recipes; r++) {
+            int main = recipes[r][0], sub = recipes[r][1];
+            int uses = (main == MAT_DRAGON_SCALE ? 2 : 0) + (sub == MAT_DRAGON_SCALE ? 1 : 0);
+            for (int q = 0; q < QUALITY_COUNT; q++) {
+                uint32_t a = s, e = s;
+                int got = craft_roll_trait(&a, q, main, sub);
+                int want;
+                if (!QUALITY_DEFS[q].has_trait) {
+                    want = EQ_TRAIT_NONE; /* 特性のない品質: 何も引かない (Dragon Scale を使っていても) */
+                } else if (uses > 0 && rng_range(&e, 0, 99) < expected_pct(uses)) {
+                    want = rng_range(&e, 0, 1) == 0 ? EQ_TRAIT_DRACONIC_EDGE : EQ_TRAIT_WYRMSCALE;
+                } else {
+                    want = 1 + rng_range(&e, 0, 4); /* 従来の抽選: 範囲 0..4 の 1 回、ID 1..5 */
+                }
+                CHECK_EQ(got, want);
+                CHECK(a == e); /* 消費した回数まで同じ */
+                if (!uses && QUALITY_DEFS[q].has_trait) {
+                    CHECK(got >= EQ_TRAIT_KEEN && got <= EQ_TRAIT_LIGHTWEIGHT); /* 通常素材では新特性が絶対に出ない */
+                }
+                if (uses && QUALITY_DEFS[q].has_trait) {
+                    dragon_seen += got >= EQ_TRAIT_STANDARD_COUNT;
+                    standard_with_scale += got < EQ_TRAIT_STANDARD_COUNT;
+                }
+            }
+        }
+    }
+    CHECK(dragon_seen > 0 && standard_with_scale > 0);
+    /* 範囲外の品質は何もしない */
+    uint32_t z = 77;
+    CHECK_EQ(craft_roll_trait(&z, -1, MAT_DRAGON_SCALE, MAT_IRON), EQ_TRAIT_NONE);
+    CHECK_EQ(craft_roll_trait(&z, QUALITY_COUNT, MAT_DRAGON_SCALE, MAT_IRON), EQ_TRAIT_NONE);
+    CHECK(z == 77);
+
+    /* 境界の乱数 (ちょうど pct - 1 が当たり、pct が外れ) を実際のクラフト抽選で確認する */
+    for (int uses = 1; uses <= 3; uses++) {
+        int main = uses == 1 ? MAT_IRON : MAT_DRAGON_SCALE, sub = uses == 3   ? MAT_DRAGON_SCALE
+                                                                  : uses == 1 ? MAT_DRAGON_SCALE
+                                                                              : MAT_IRON;
+        CHECK_EQ(dragon_scale_uses(main, sub), uses);
+        int hit_at = 0, miss_at = 0;
+        for (uint32_t s = 1; s < 400000 && !(hit_at && miss_at); s++) {
+            uint32_t t = s;
+            int roll = rng_range(&t, 0, 99);
+            if (roll == expected_pct(uses) - 1 && !hit_at) {
+                uint32_t a = s;
+                int tr = craft_roll_trait(&a, QUALITY_MASTERWORK, main, sub);
+                CHECK(tr >= EQ_TRAIT_STANDARD_COUNT);
+                hit_at = 1;
+            }
+            if (roll == expected_pct(uses) && !miss_at) {
+                uint32_t a = s;
+                int tr = craft_roll_trait(&a, QUALITY_LEGENDARY, main, sub);
+                CHECK(tr < EQ_TRAIT_STANDARD_COUNT && tr > EQ_TRAIT_NONE);
+                miss_at = 1;
+            }
+        }
+        CHECK(hit_at && miss_at);
+    }
+    /* 十分な標本での割合 (固定シード列: 決定的)。使用数が多いほど高く、特殊特性の 2 種は同程度 */
+    int cnt[4] = {0}, tot[4] = {0}, de = 0, ws = 0;
+    for (uint32_t s = 1; s <= 60000; s++) {
+        for (int uses = 1; uses <= 3; uses++) {
+            int main = uses == 1 ? MAT_IRON : MAT_DRAGON_SCALE, sub = uses == 3   ? MAT_DRAGON_SCALE
+                                                                      : uses == 1 ? MAT_DRAGON_SCALE
+                                                                                  : MAT_IRON;
+            uint32_t a = s;
+            int tr = craft_roll_trait(&a, QUALITY_MASTERWORK, main, sub);
+            tot[uses]++;
+            if (tr >= EQ_TRAIT_STANDARD_COUNT) {
+                cnt[uses]++;
+                de += tr == EQ_TRAIT_DRACONIC_EDGE;
+                ws += tr == EQ_TRAIT_WYRMSCALE;
+            }
+        }
+    }
+    for (int uses = 1; uses <= 3; uses++) {
+        double f = 100.0 * cnt[uses] / tot[uses];
+        printf("  scales %d: dragon trait %.1f%% (target %d%%)\n", uses, f, expected_pct(uses));
+        CHECK(f > expected_pct(uses) - 1.5 && f < expected_pct(uses) + 1.5);
+    }
+    CHECK(cnt[1] < cnt[2] && cnt[2] < cnt[3]);
+    CHECK(de + ws == cnt[1] + cnt[2] + cnt[3]);
+    CHECK(de * 100 > (de + ws) * 48 && de * 100 < (de + ws) * 52); /* 50% ずつ */
+}
+
+static void test_dragon_trait_craft(void) {
+    puts("dragon_trait_craft");
+    for (int forge = 0; forge <= 2; forge++) {
+        for (int pick = 0; pick <= 1; pick++) {
+            for (int q = QUALITY_MASTERWORK; q <= QUALITY_LEGENDARY; q++) {
+                for (int recipe = 0; recipe < 3; recipe++) {
+                    int main = recipe == 1 ? MAT_IRON : MAT_DRAGON_SCALE;
+                    int sub = recipe == 0 ? MAT_IRON : MAT_DRAGON_SCALE;
+                    int uses = dragon_scale_uses(main, sub);
+                    GameState g = at_done(50);
+                    g.up_level[UP_FORGE] = forge;
+                    g.mat_stock[main] += 3;
+                    g.mat_stock[sub] += 3;
+                    g.mat_cost[MAT_IRON] = g.mat_stock[MAT_IRON] ? 30 : 0;
+                    g.craft_rng = find_craft_seed(RANK_MYTHIC, forge, q, uses, 1, pick);
+                    GameState before = g;
+                    int idx = -1;
+                    CHECK_EQ(craft_equipment(&g, EQ_WYRMCLEAVER, main, sub, &idx), R_OK);
+                    const Equipment *e = &g.inv[idx];
+                    int trait = pick == 0 ? EQ_TRAIT_DRACONIC_EDGE : EQ_TRAIT_WYRMSCALE;
+                    CHECK_EQ(e->quality, q);
+                    CHECK_EQ(e->trait, trait);
+                    /* 能力値: 基本 -> 品質倍率 -> 特性 (1 回) */
+                    Equipment base;
+                    memset(&base, 0, sizeof base);
+                    base.type = EQ_WYRMCLEAVER;
+                    base.main = main;
+                    base.sub = sub;
+                    equipment_compute_stats(&base, forge);
+                    int mult = QUALITY_DEFS[q].mult_pm, amt = q == QUALITY_MASTERWORK ? 3 : 4;
+                    CHECK_EQ(e->atk, qmul(base.atk, mult) + (pick == 0 ? amt : 0));
+                    CHECK_EQ(e->dur, qmul(base.dur, mult) + (pick == 1 ? amt : 0));
+                    /* FIT と推奨価格は、特性を含んだ最終能力から求まる (特性ぶんを除いた同じ装備より高い) */
+                    Equipment without = *e;
+                    if (pick == 0) {
+                        without.atk -= amt;
+                    } else {
+                        without.dur -= amt;
+                    }
+                    equipment_price(&without);
+                    CHECK(equip_fit(CT_WYRM_HUNTER, e) >= equip_fit(CT_WYRM_HUNTER, &without));
+                    CHECK(e->value > without.value);
+                    CHECK(e->rec_price >= without.rec_price);
+                    Equipment chk = *e;
+                    equipment_price(&chk);
+                    CHECK_EQ(e->value, chk.value);
+                    CHECK_EQ(e->rec_price, chk.rec_price);
+                    CHECK_EQ(e->price, e->rec_price);
+                    /* 他のストリームは使わない。craft_rng は品質 1 回 + 判定 1 回 + 選択 1 回 */
+                    CHECK(g.rng == before.rng && g.guild_rng == before.guild_rng);
+                    uint32_t t = before.craft_rng;
+                    rng_range(&t, 0, 99);
+                    rng_range(&t, 0, 99);
+                    rng_range(&t, 0, 1);
+                    CHECK(g.craft_rng == t);
+                    CHECK(game_validate(&g));
+                }
+            }
+        }
+    }
+    /* 判定に外れたら通常特性 (Dragon Scale を使っても): 消費は品質 + 判定 + 通常抽選 */
+    {
+        GameState g = at_done(50);
+        g.mat_stock[MAT_DRAGON_SCALE] = 3;
+        g.craft_rng = find_craft_seed(RANK_MYTHIC, 0, QUALITY_LEGENDARY, 3, 0, 0);
+        uint32_t t = g.craft_rng;
+        rng_range(&t, 0, 99);
+        rng_range(&t, 0, 99);
+        int want = 1 + rng_range(&t, 0, 4);
+        int idx = -1;
+        CHECK_EQ(craft_equipment(&g, EQ_SWORD, MAT_DRAGON_SCALE, MAT_DRAGON_SCALE, &idx), R_OK);
+        CHECK_EQ(g.inv[idx].trait, want);
+        CHECK(g.inv[idx].trait < EQ_TRAIT_STANDARD_COUNT);
+        CHECK(g.craft_rng == t);
+    }
+    /* Common / Fine: Dragon Scale を使っても特性なしで、消費は品質の 1 回だけ (従来と同じ) */
+    for (int q = QUALITY_COMMON; q <= QUALITY_FINE; q++) {
+        GameState g = at_done(50);
+        g.mat_stock[MAT_DRAGON_SCALE] = 3;
+        g.craft_rng = find_craft_seed(RANK_MYTHIC, 0, q, 3, -1, 0);
+        uint32_t t = g.craft_rng;
+        rng_range(&t, 0, 99);
+        int idx = -1;
+        CHECK_EQ(craft_equipment(&g, EQ_WYRMCLEAVER, MAT_DRAGON_SCALE, MAT_DRAGON_SCALE, &idx), R_OK);
+        CHECK_EQ(g.inv[idx].quality, q);
+        CHECK_EQ(g.inv[idx].trait, EQ_TRAIT_NONE);
+        CHECK(g.craft_rng == t);
+    }
+    /* Dragon Scale を使わないクラフト: 従来と完全に同じ消費・結果 (品質 + 通常特性の 1 回)。新特性は出ない */
+    {
+        int n = 0;
+        for (uint32_t s = 1; s <= 3000; s++) {
+            GameState g = at_done(50);
+            g.up_level[UP_FORGE] = 2;
+            g.mat_stock[MAT_STEEL] = 3;
+            g.mat_cost[MAT_STEEL] = 36;
+            g.craft_rng = s;
+            uint32_t t = s;
+            int q = quality_from_roll(RANK_MYTHIC, 2, rng_range(&t, 0, 99));
+            int want = QUALITY_DEFS[q].has_trait ? 1 + rng_range(&t, 0, 4) : EQ_TRAIT_NONE;
+            int idx = -1;
+            CHECK_EQ(craft_equipment(&g, EQ_SWORD, MAT_STEEL, MAT_STEEL, &idx), R_OK);
+            CHECK_EQ(g.inv[idx].trait, want);
+            CHECK(g.inv[idx].trait < EQ_TRAIT_STANDARD_COUNT);
+            CHECK(g.craft_rng == t);
+            n += want != 0;
+        }
+        CHECK(n > 0);
+    }
+    /* 高品質装備が過度に安価 / 高価にならない: 特殊特性の装備の価値は、同じ素材・品質の通常特性の装備に近い */
+    for (int q = QUALITY_MASTERWORK; q <= QUALITY_LEGENDARY; q++) {
+        Equipment d, k;
+        memset(&d, 0, sizeof d);
+        d.type = EQ_WYRMCLEAVER;
+        d.main = MAT_DRAGON_SCALE;
+        d.sub = MAT_IRON;
+        d.cost = 10;
+        k = d;
+        equipment_build(&d, 1, q, EQ_TRAIT_DRACONIC_EDGE);
+        equipment_build(&k, 1, q, EQ_TRAIT_KEEN);
+        equipment_price(&d);
+        equipment_price(&k);
+        CHECK(d.value >= k.value); /* 効果が +1 大きいぶん、わずかに高い */
+        CHECK(d.value * 100 <= k.value * 108);
+    }
+}
+
+static void test_dragon_trait_save(void) {
+    puts("dragon_trait_save");
+    for (int pick = 0; pick <= 1; pick++) {
+        for (int q = QUALITY_MASTERWORK; q <= QUALITY_LEGENDARY; q++) {
+            GameState g = at_done(50);
+            g.up_level[UP_FORGE] = 1;
+            g.mat_stock[MAT_DRAGON_SCALE] = 3;
+            g.craft_rng = find_craft_seed(RANK_MYTHIC, 1, q, 3, 1, pick);
+            int idx = -1;
+            CHECK_EQ(craft_equipment(&g, EQ_WYRMCLEAVER, MAT_DRAGON_SCALE, MAT_DRAGON_SCALE, &idx), R_OK);
+            Equipment e = g.inv[idx];
+            char *t = save_text(&g);
+            GameState r;
+            CHECK_EQ(load_text(&r, t), SAVE_OK);
+            CHECK(same_state(&g, &r));
+            CHECK_EQ(r.inv[0].trait, pick == 0 ? EQ_TRAIT_DRACONIC_EDGE : EQ_TRAIT_WYRMSCALE);
+            CHECK_EQ(r.inv[0].atk, e.atk);
+            CHECK_EQ(r.inv[0].dur, e.dur);
+            CHECK_EQ(r.inv[0].value, e.value);
+            char fx[24];
+            trait_effect_text(r.inv[0].trait, r.inv[0].quality, fx, sizeof fx);
+            CHECK(!strcmp(fx, q == QUALITY_MASTERWORK ? (pick == 0 ? "+3 ATK" : "+3 DUR")
+                                                      : (pick == 0 ? "+4 ATK" : "+4 DUR")));
+            CHECK(!strcmp(trait_name(r.inv[0].trait), pick == 0 ? "Draconic Edge" : "Wyrmscale"));
+            char *t2 = save_text(&r);
+            CHECK(!strcmp(t, t2)); /* 保存形式は変わらない: 既存の item 行に特性 ID が入るだけ */
+            CHECK(!strncmp(t, "LOOTSMITH_SAVE 4\n", 17));
+            free(t2);
+            /* Dragon Scale を使っていない装備に特殊特性があるセーブは拒否される (読み込み先は変わらない) */
+            GameState bad = g;
+            bad.inv[0].main = MAT_IRON;
+            bad.inv[0].sub = MAT_IRON;
+            CHECK(!game_validate(&bad));
+            char *tb = save_text(&bad);
+            GameState probe = fresh(), keep = probe;
+            CHECK_EQ(load_text(&probe, tb), SAVE_ERR_VALUE);
+            CHECK(same_state(&probe, &keep));
+            free(tb);
+            /* 副素材だけが Dragon Scale でも有効 */
+            GameState sub_only = g;
+            sub_only.inv[0].main = MAT_IRON;
+            CHECK(game_validate(&sub_only));
+            /* Common / Fine に特殊特性は不正 */
+            GameState low = g;
+            low.inv[0].quality = QUALITY_FINE;
+            CHECK(!game_validate(&low));
+            /* 範囲外の特性 ID は不正 */
+            GameState oob = g;
+            oob.inv[0].trait = EQ_TRAIT_COUNT;
+            CHECK(!game_validate(&oob));
+            free(t);
+        }
+    }
+    /* 旧セーブ (通常特性の装備) は変わらず読み込める: v3 形式の本文から */
+    {
+        GameState s = at_done(30);
+        put_built(&s, EQ_SWORD, MAT_IRON, MAT_IRON, QUALITY_LEGENDARY, EQ_TRAIT_LIGHTWEIGHT);
+        char *t4 = save_text(&s);
+        char *t3 = as_v3_build(t4);
+        GameState l;
+        CHECK_EQ(load_text(&l, t3), SAVE_OK);
+        CHECK(same_state(&s, &l));
+        CHECK_EQ(l.inv[0].trait, EQ_TRAIT_LIGHTWEIGHT);
+        free(t3);
+        free(t4);
+    }
+}
+
 static void test_dragon_streams(void) {
     puts("dragon_streams");
     /* Dragon Hunt の抽選は guild_rng だけを使う。rng と craft_rng は他の操作の影響を受けない */
@@ -7661,6 +8293,12 @@ int main(void) {
     test_dragon_rarity();
     test_dragon_save();
     test_dragon_streams();
+    test_dragon_trait_tables();
+    test_dragon_trait_apply();
+    test_dragon_trait_roll();
+    test_dragon_trait_stream();
+    test_dragon_trait_craft();
+    test_dragon_trait_save();
     test_bots();
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails ? 1 : 0;

@@ -51,7 +51,41 @@ int quality_from_roll(int rank, int forge_level, int roll) {
 }
 
 int trait_from_roll(int roll) {
-    return 1 + clampi(roll, 0, EQ_TRAIT_COUNT - 2);
+    return 1 + clampi(roll, 0, EQ_TRAIT_STANDARD_COUNT - 2); /* 通常特性だけ。EQ_TRAIT_COUNT には依存しない */
+}
+
+int dragon_scale_uses(int main, int sub) {
+    return (main == MAT_DRAGON_SCALE ? 2 : 0) + (sub == MAT_DRAGON_SCALE ? 1 : 0); /* 主 = 副 = Scale なら 3 */
+}
+
+int dragon_trait_chance_pct(int uses) {
+    return DRAGON_TRAIT_PCT[clampi(uses, 0, DRAGON_SCALE_USE_MAX)];
+}
+
+int chance_roll_hits(int pct, int roll) {
+    return clampi(roll, 0, 99) < pct;
+}
+
+int dragon_trait_hits(int uses, int roll) {
+    return chance_roll_hits(dragon_trait_chance_pct(uses), roll);
+}
+
+int dragon_trait_from_roll(int roll) {
+    return DRAGON_TRAIT_IDS[clampi(roll, 0, DRAGON_TRAIT_KINDS - 1)];
+}
+
+/* 特性の抽選。Dragon Scale を使わない場合は従来と完全に同じ (特性のある品質で rng_range(0, 通常特性数 - 2) を 1 回)。
+ * 使う場合 (Masterwork / Legendary のみ) は、先に特殊特性の判定 (0..99) を 1 回引き、当たりなら候補から 1 回選ぶ。
+ * 外れたら従来どおり通常特性を 1 回引く。品質に特性がなければ何も引かない。すべて craft_rng だけを使う。 */
+int craft_roll_trait(uint32_t *craft_rng, int quality, int main, int sub) {
+    if (quality < 0 || quality >= QUALITY_COUNT || !QUALITY_DEFS[quality].has_trait) {
+        return EQ_TRAIT_NONE;
+    }
+    int uses = dragon_scale_uses(main, sub);
+    if (uses > 0 && dragon_trait_hits(uses, rng_range(craft_rng, 0, 99))) {
+        return dragon_trait_from_roll(rng_range(craft_rng, 0, DRAGON_TRAIT_KINDS - 1));
+    }
+    return trait_from_roll(rng_range(craft_rng, 0, EQ_TRAIT_STANDARD_COUNT - 2));
 }
 
 const char *quality_name(int q) {
@@ -86,6 +120,9 @@ int equipment_apply_quality(Equipment *e, int quality, int trait) {
     }
     if ((QUALITY_DEFS[quality].has_trait != 0) != (trait != EQ_TRAIT_NONE)) {
         return 0;
+    }
+    if (TRAIT_DEFS[trait].dragon && dragon_scale_uses(e->main, e->sub) == 0) {
+        return 0; /* Dragonforging の特性は、Dragon Scale を使った装備にしか付かない */
     }
     if (e->quality != QUALITY_COMMON || e->trait != EQ_TRAIT_NONE) {
         return 0;
@@ -220,8 +257,7 @@ Result craft_equipment(GameState *g, int eq, int main, int sub, int *out_idx) {
      * は決して消費しない)。 */
     int forge = g->up_level[UP_FORGE];
     int quality = quality_from_roll(guild_rank(g->guild_done), forge, rng_range(&g->craft_rng, 0, 99));
-    int trait = QUALITY_DEFS[quality].has_trait ? trait_from_roll(rng_range(&g->craft_rng, 0, EQ_TRAIT_COUNT - 2))
-                                                : EQ_TRAIT_NONE;
+    int trait = craft_roll_trait(&g->craft_rng, quality, main, sub);
     equipment_build(&e, forge, quality, trait); /* 基本能力 -> 品質 -> 特性。それぞれちょうど 1 回 */
     equipment_price(&e);                        /* 価値と価格は最終的な能力から求める */
     e.price = e.rec_price;

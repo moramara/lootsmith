@@ -255,24 +255,16 @@ static const char *content_validate_quality(void) {
             }
         }
     }
-    for (int t = 0; t < EQ_TRAIT_COUNT; t++) {
-        const TraitDef *d = &TRAIT_DEFS[t];
-        if (!name_ok(d->name) || !d->desc || !d->desc[0]) {
-            return cerr("TRAIT_DEFS", t, "name / desc missing");
+    {
+        const char *e = content_validate_traits(TRAIT_DEFS);
+        if (e) {
+            return e;
         }
-        if (d->stat < TS_ATK || d->stat > TS_WT_DOWN) {
-            return cerr("TRAIT_DEFS", t, "bad stat");
-        }
-        for (int q = 0; q < QUALITY_COUNT; q++) {
-            int want = t != EQ_TRAIT_NONE && QUALITY_DEFS[q].has_trait;
-            if ((d->amount[q] > 0) != want || d->amount[q] < 0) {
-                return cerr("TRAIT_DEFS", t, "amount must be > 0 exactly for qualities with traits");
-            }
-        }
-        for (int j = 0; j < t; j++) {
-            if (!strcmp(TRAIT_DEFS[j].name, d->name)) {
-                return cerr("TRAIT_DEFS", t, "duplicate name");
-            }
+    }
+    {
+        const char *e = content_validate_dragon_forging(DRAGON_TRAIT_PCT, DRAGON_TRAIT_IDS);
+        if (e) {
+            return e;
         }
     }
     for (int r = 0; r < RANK_COUNT; r++) {
@@ -321,6 +313,74 @@ const char *content_validate_dragon_hunt(const DragonHuntDef *h) {
     }
     if (h->min_done < 0 || !customer_unlocked(h->min_done, h->customer)) {
         return cerr("GUILD_DRAGON_HUNT", 0, "the client must be unlocked at min_done");
+    }
+    return NULL;
+}
+
+/* 特性テーブルの検査 (任意の表を渡せるので、不正な値が拒否されることをテストで示せる) */
+const char *content_validate_traits(const TraitDef defs[EQ_TRAIT_COUNT]) {
+    for (int t = 0; t < EQ_TRAIT_COUNT; t++) {
+        const TraitDef *d = &defs[t];
+        if (!name_ok(d->name) || !d->desc || !d->desc[0]) {
+            return cerr("TRAIT_DEFS", t, "name / desc missing");
+        }
+        if (d->stat < TS_ATK || d->stat > TS_WT_DOWN) {
+            return cerr("TRAIT_DEFS", t, "bad stat");
+        }
+        for (int q = 0; q < QUALITY_COUNT; q++) {
+            int want = t != EQ_TRAIT_NONE && QUALITY_DEFS[q].has_trait;
+            if ((d->amount[q] > 0) != want || d->amount[q] < 0) {
+                return cerr("TRAIT_DEFS", t, "amount must be > 0 exactly for qualities with traits");
+            }
+        }
+        for (int j = 0; j < t; j++) {
+            if (!strcmp(defs[j].name, d->name)) {
+                return cerr("TRAIT_DEFS", t, "duplicate name");
+            }
+        }
+        if (d->dragon != 0 && d->dragon != 1) {
+            return cerr("TRAIT_DEFS", t, "dragon must be 0 or 1");
+        }
+        if ((t >= EQ_TRAIT_STANDARD_COUNT) != (d->dragon != 0)) {
+            return cerr("TRAIT_DEFS", t, "dragon traits are exactly the IDs from EQ_TRAIT_STANDARD_COUNT on");
+        }
+    }
+    return NULL;
+}
+
+/* Dragonforging の確率表と候補表の検査 (任意の表を渡せるので、不正な値が拒否されることをテストで示せる) */
+const char *content_validate_dragon_forging(const int pct[DRAGON_SCALE_USE_MAX + 1],
+                                            const int ids[DRAGON_TRAIT_KINDS]) {
+    if (!pct || !ids) {
+        return cerr("DRAGON_TRAIT", 0, "table missing");
+    }
+    if (pct[0] != 0) {
+        return cerr("DRAGON_TRAIT_PCT", 0, "no Dragon Scale means no dragon trait (must be 0)");
+    }
+    for (int u = 1; u <= DRAGON_SCALE_USE_MAX; u++) {
+        if (pct[u] < 0 || pct[u] > 100) {
+            return cerr("DRAGON_TRAIT_PCT", u, "must be 0..100");
+        }
+        if (pct[u] < pct[u - 1]) {
+            return cerr("DRAGON_TRAIT_PCT", u, "more Dragon Scale must not lower the chance");
+        }
+    }
+    int dragon_traits = 0;
+    for (int t = 0; t < EQ_TRAIT_COUNT; t++) {
+        dragon_traits += TRAIT_DEFS[t].dragon != 0;
+    }
+    if (dragon_traits != DRAGON_TRAIT_KINDS) {
+        return cerr("DRAGON_TRAIT_IDS", 0, "every dragon trait must be a candidate (and nothing else)");
+    }
+    for (int i = 0; i < DRAGON_TRAIT_KINDS; i++) {
+        if (ids[i] < 0 || ids[i] >= EQ_TRAIT_COUNT || !TRAIT_DEFS[ids[i]].dragon) {
+            return cerr("DRAGON_TRAIT_IDS", i, "must be a dragon trait id");
+        }
+        for (int j = 0; j < i; j++) {
+            if (ids[j] == ids[i]) {
+                return cerr("DRAGON_TRAIT_IDS", i, "duplicate candidate");
+            }
+        }
     }
     return NULL;
 }

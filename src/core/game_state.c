@@ -110,6 +110,9 @@ int game_validate(const GameState *g) {
         if ((QUALITY_DEFS[e->quality].has_trait != 0) != (e->trait != EQ_TRAIT_NONE)) {
             return 0; /* Masterwork/Legendary: ちょうど 1 つ。それ以外: なし */
         }
+        if (TRAIT_DEFS[e->trait].dragon && dragon_scale_uses(e->main, e->sub) == 0) {
+            return 0; /* Dragonforging の特性は Dragon Scale を使った装備だけ */
+        }
     }
     if (g->craft_rng == 0) {
         return 0;

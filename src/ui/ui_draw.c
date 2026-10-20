@@ -241,6 +241,27 @@ const char *trait_line(const Equipment *e) {
     return TextFormat("TRAIT: %s (%s)", upper_txt(trait_name(e->trait)), fx);
 }
 
+/* 一覧の狭い欄用の特性表示 "KEEN +2 ATK"。特性名が長くて maxw に収まらないときは、名前を先頭の単語に縮める
+ * ("DRACONIC EDGE +3 ATK" -> "DRACONIC +3 ATK")。効果の値は必ず残す。特性がなければ空文字列 */
+const char *trait_label(const Equipment *e, int maxw) {
+    char fx[24];
+    trait_effect_text(e->trait, e->quality, fx, sizeof fx);
+    if (!fx[0]) {
+        return "";
+    }
+    const char *full = TextFormat("%s %s", upper_txt(trait_name(e->trait)), fx);
+    if (MeasureText(full, 10) <= maxw) {
+        return full;
+    }
+    char word[32];
+    snprintf(word, sizeof word, "%s", upper_txt(trait_name(e->trait)));
+    char *sp = strchr(word, ' ');
+    if (sp) {
+        *sp = 0;
+    }
+    return TextFormat("%s %s", word, fx);
+}
+
 /* 品質の色の枠を、(x, y) に倍率 sc で描いた 12x12 アイコンの周りに付ける (Common: 枠なし) */
 void quality_frame(int q, int x, int y, int sc) {
     if (q > QUALITY_COMMON) {

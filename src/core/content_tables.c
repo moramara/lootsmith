@@ -508,7 +508,25 @@ const TraitDef TRAIT_DEFS[EQ_TRAIT_COUNT] = {
                               .desc = "Easy to carry: less WT.",
                               .stat = TS_WT_DOWN,
                               .amount = {0, 0, 1, 2}},
+    /* Dragonforging: Dragon Scale を使った Masterwork / Legendary にだけ付く (.dragon = 1)。品質倍率の後に 1 回だけ足す
+     */
+    [EQ_TRAIT_DRACONIC_EDGE] = {.name = "Draconic Edge",
+                                .desc = "Dragon-forged edge: increased ATK.",
+                                .stat = TS_ATK,
+                                .amount = {0, 0, 3, 4},
+                                .dragon = 1},
+    [EQ_TRAIT_WYRMSCALE] = {.name = "Wyrmscale",
+                            .desc = "Wyrm scales reinforce the item: increased DUR.",
+                            .stat = TS_DUR,
+                            .amount = {0, 0, 3, 4},
+                            .dragon = 1},
 };
+
+/* Dragonforging の抽選: Dragon Scale を 1 / 2 / 3 個使った Masterwork / Legendary
+ * が、通常特性の代わりに特殊特性になる確率 (%)。 当たったときは DRAGON_TRAIT_IDS から均等に 1
+ * つ。外れたら従来どおり通常特性を均等に抽選する。 */
+const int DRAGON_TRAIT_PCT[DRAGON_SCALE_USE_MAX + 1] = {0, 20, 30, 35};
+const int DRAGON_TRAIT_IDS[DRAGON_TRAIT_KINDS] = {EQ_TRAIT_DRACONIC_EDGE, EQ_TRAIT_WYRMSCALE};
 
 /* ギルドランクごとの基本品質確率 (パーセント。行 = RANK_*、列 = QUALITY_*)。各行の合計は 100。
  * 鍛冶場はこれに加えて、レベルごとに BAL.quality_forge_shift_pct ポイントを Common から Fine へ移す (quality_rates()

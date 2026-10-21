@@ -119,15 +119,16 @@ void screen_market(App *a) {
         txt(TextFormat("In stock: %d", g->mat_stock[m]), 200, y + 14, C_TEXT);
         txt(g->mat_stock[m] ? TextFormat("Avg cost: %d", avg) : "Avg cost: -", 200, y + 28, C_DIM);
         txt_fit(MATERIALS[m].desc, 200, y + 66, 410, C_DIM);
-        { /* 通常価格 -> 最終価格。表示・見積もり・購入は同じ core の式 (market_unit_price / market_quote) を通る */
-            int sup = upgrade_effect(UP_SUPPLY, g->up_level[UP_SUPPLY]), ev = event_market_discount_pct(g->day),
-                fin = market_unit_price(g, m);
-            txt(TextFormat("Final: %d each", fin), 200, y + 42, fin < g->price[m] ? C_GOOD : C_TEXT);
+        { /* 割引内訳。実効単価は選択数量に応じて後で表示する */
+            int sup = upgrade_effect(UP_SUPPLY, g->up_level[UP_SUPPLY]);
+            int ev = event_market_discount_pct(g->day);
+
             if (sup > 0 || ev > 0) {
                 txt_fit(sup > 0 && ev > 0 ? TextFormat("Sup -%d%%  Event -%d%%", sup, ev)
                         : ev > 0          ? TextFormat("Event -%d%%", ev)
                                           : TextFormat("Supplier -%d%%", sup),
-                        200, y + 54, 116, event_color(ev > 0 ? EVENT_MARKET_CARAVAN : EVENT_NONE));
+                        200, y + 54, 116,
+                        event_color(ev > 0 ? EVENT_MARKET_CARAVAN : EVENT_NONE));
             }
         }
 
@@ -155,8 +156,23 @@ void screen_market(App *a) {
             *q = mx > 0 ? mx : 1;
         }
         int total = market_quote(g, m, *q);
-        bool afford = total >= 0 && total <= g->money && g->mat_stock[m] + *q <= BAL.stock_cap;
-        txt(TextFormat("Total: %d gold", total), bx, y + 40, afford ? C_GOLD : C_BAD);
+
+        /* 合計金額を選択数量で割り、実際の見積もりに一致する平均単価を表示 */
+        float effective = (total >= 0 && *q > 0)
+                        ? (float)total / (float)*q
+                        : (float)market_unit_price(g, m);
+
+        txt(TextFormat("Avg: %.2f each", effective),
+            200, y + 42,
+            effective < g->price[m] ? C_GOOD : C_TEXT);
+
+        bool afford = total >= 0 && total <= g->money &&
+                        g->mat_stock[m] + *q <= BAL.stock_cap;
+
+        txt(TextFormat("Total: %d gold", total),
+            bx, y + 40,
+            afford ? C_GOLD : C_BAD);
+
         if (btn(a, bx + 150, y + 38, 100, 22, "BUY", afford ? 0 : BF_DIM, 0) || (sel && key_hit(a, KEY_ENTER))) {
             Result r = market_buy(g, m, *q);
             if (r == R_OK) {

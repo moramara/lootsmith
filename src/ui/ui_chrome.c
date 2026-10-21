@@ -47,6 +47,9 @@ void draw_footer(App *a) {
     DrawRectangle(0, 344, VW, 1, C_BORDER);
     if (a->msg_t > 0 && a->msg[0]) {
         txt_fit(a->msg, 8, 349, VW - 16, a->msg_good ? C_GOOD : C_BAD);
+    } else if (day_event(a->gs.day) != EVENT_NONE && a->screen != SCR_BOT) {
+        txt_fit(event_headline(a->gs.day), 8, 349, VW - 16,
+                event_color(day_event(a->gs.day))); /* 日付から導く (保存しない) */
     } else {
         txt("Tip: buy materials when their price is below normal (green).", 8, 349, C_DIM);
     }
@@ -121,9 +124,10 @@ void draw_scene(App *a, int x, int y, int w, int h) {
     }
     draw_furnace(a, x + 18, y + h - 112, 76, 68);
     draw_anvil(a, x + 150, y + h - 76);
-    for (int m = 0; m < MAT_COUNT && m < 8; m++) { /* 素材の木箱: 2x2 のブロックで、左へ増えていく */
+    for (int m = 0; m < MAT_COUNT;
+         m++) { /* 素材の木箱: 2x2 のブロック (最大 3 つ) で、左へ増えていく。金床と重ならない幅 */
         if (g->mat_stock[m] > 0) {
-            draw_mat_icon(m, x + w - 44 - (m / 4) * 40 + (m % 2) * 18, y + h - 44 + ((m % 4) / 2) * 18, 1);
+            draw_mat_icon(m, x + w - 34 - (m / 4) * 32 + (m % 2) * 14, y + h - 44 + ((m % 4) / 2) * 14, 1);
         }
     }
 }

@@ -29,15 +29,21 @@ static int contract_valid(const GuildContract *c, const GameState *g, int active
         if (c->reward_mat != 0 || c->reward_qty != 0) {
             return 0; /* 通常契約に特別報酬はない (正規形: 素材 0・数 0) */
         }
-    } else { /* GUILD_CONTRACT_DRAGON_HUNT: 報酬は hunt_only の素材で、数は 1..stock_cap。依頼主は決まっている */
+    } else { /* 特別契約 (Dragon Hunt / Relic Expedition): 報酬は hunt_only
+                の素材で、数は 1..stock_cap。依頼主と解放条件は種別で決まる */
+        const SpecialContractDef *def = guild_special_def(c->kind);
+        if (!def) {
+            return 0;
+        }
         if (c->reward_qty < 1 || c->reward_qty > BAL.stock_cap) {
             return 0;
         }
         if (c->reward_mat < 0 || c->reward_mat >= MAT_COUNT || !MATERIALS[c->reward_mat].hunt_only) {
             return 0;
         }
-        if (c->customer_type != GUILD_DRAGON_HUNT.customer || !guild_dragon_hunt_eligible(g->guild_done)) {
-            return 0; /* Mythic Smith 到達前には存在しえない */
+        if (c->customer_type != def->customer || g->guild_done < def->min_done) {
+            return 0; /* 解放ランク (Dragon Hunt: Mythic Smith、Relic Expedition: Ascendant Smith)
+                         に到達する前には存在しえない */
         }
     }
     if (!active) {
@@ -86,11 +92,11 @@ int guild_state_valid(const GameState *g) {
         }
     }
     {
-        int hunts = 0; /* 掲示板の Dragon Hunt は最大 1 件 */
+        int specials = 0; /* 掲示板の特別契約 (Dragon Hunt / Relic Expedition) は合わせて最大 1 件 */
         for (int i = 0; i < g->guild_board_count; i++) {
-            hunts += g->guild_board[i].kind == GUILD_CONTRACT_DRAGON_HUNT;
+            specials += g->guild_board[i].kind != GUILD_CONTRACT_STANDARD;
         }
-        if (hunts > 1) {
+        if (specials > 1) {
             return 0;
         }
     }
@@ -118,9 +124,50 @@ int guild_dragon_hunt_roll_hits(int roll) {
 }
 
 const char *guild_kind_name(int kind) {
-    return kind == GUILD_CONTRACT_STANDARD      ? "Contract"
-           : kind == GUILD_CONTRACT_DRAGON_HUNT ? GUILD_DRAGON_HUNT.name
-                                                : "?";
+    return kind == GUILD_CONTRACT_STANDARD           ? "Contract"
+           : kind == GUILD_CONTRACT_DRAGON_HUNT      ? GUILD_DRAGON_HUNT.name
+           : kind == GUILD_CONTRACT_RELIC_EXPEDITION ? GUILD_RELIC_EXPEDITION.name
+                                                     : "?";
+}
+
+const SpecialContractDef *guild_special_def(int kind) {
+    return kind == GUILD_CONTRACT_DRAGON_HUNT        ? &GUILD_DRAGON_HUNT
+           : kind == GUILD_CONTRACT_RELIC_EXPEDITION ? &GUILD_RELIC_EXPEDITION
+                                                     : NULL;
+}
+
+const SpecialContractDef *guild_reward_source(int mat) {
+    for (int k = GUILD_CONTRACT_STANDARD + 1; k < GUILD_CONTRACT_KIND_COUNT; k++) {
+        const SpecialContractDef *d = guild_special_def(k);
+        if (d && d->reward_mat == mat) {
+            return d;
+        }
+    }
+    return NULL;
+}
+
+/* 特別契約の抽選対象: Dragon Hunt の対象 (Mythic Smith 以上) になって初めて、掲示板の更新ごとに guild_rng を 1 回引く。
+ * Relic Expedition の対象 (Ascendant Smith 以上) は Dragon Hunt の対象に含まれるので、ここで足す条件はない */
+int guild_special_eligible(int done) {
+    return guild_dragon_hunt_eligible(done);
+}
+
+/* 1 つのロール 0..99 を、解放済みの特別契約の帯に割り当てる。Relic Expedition が解放されている間は、
+ * [0, relic.spawn_pct) が Relic Expedition、続く [relic.spawn_pct, relic.spawn_pct + dragon.spawn_pct) が Dragon Hunt
+ * なので、 Dragon Hunt の出現率は 25% のまま。Relic Expedition がまだ解放されていなければ、従来どおり roll <
+ * dragon.spawn_pct だけ。 */
+int guild_special_from_roll(int done, int roll) {
+    roll = clampi(roll, 0, 99);
+    if (!guild_special_eligible(done)) {
+        return GUILD_CONTRACT_STANDARD;
+    }
+    if (done >= GUILD_RELIC_EXPEDITION.min_done) {
+        if (roll < GUILD_RELIC_EXPEDITION.spawn_pct) {
+            return GUILD_CONTRACT_RELIC_EXPEDITION;
+        }
+        roll -= GUILD_RELIC_EXPEDITION.spawn_pct;
+    }
+    return guild_dragon_hunt_roll_hits(roll) ? GUILD_CONTRACT_DRAGON_HUNT : GUILD_CONTRACT_STANDARD;
 }
 
 static int guild_pick_difficulty(uint32_t *rng, int day) {
@@ -150,12 +197,18 @@ void guild_refresh_board(GameState *g) {
     memset(g->guild_board, 0, sizeof g->guild_board);
     g->guild_board_count = 0;
     int used[CUST_TYPE_COUNT] = {0};
-    /* Dragon Hunt の抽選: 対象 (Mythic Smith 以上) のときだけ guild_rng を 1 回引く。対象外では何も引かないので、
-     * 通常の掲示板の乱数列は従来のまま。出現すると通常契約が 1 件減り、掲示板の総数は常に GUILD_OFFER_COUNT になる */
-    int hunt =
-        guild_dragon_hunt_eligible(g->guild_done) && guild_dragon_hunt_roll_hits(rng_range(&g->guild_rng, 0, 99));
+    /* 特別契約の抽選: 対象 (Mythic Smith 以上) のときだけ guild_rng を 1 回引き、1 つのロールで Relic Expedition /
+     * Dragon Hunt / なし を分類する。対象外 (guild_done < 50)
+     * では何も引かないので、通常の掲示板の乱数列は従来のまま。75 件未満では Relic Expedition のための乱数も引かない
+     * (Dragon Hunt の 1 回だけ)。出現すると通常契約が 1 件減り、総数は常に GUILD_OFFER_COUNT になる。特別契約は 1
+     * 回の更新で最大 1 件 */
+    int special = guild_special_eligible(g->guild_done)
+                      ? guild_special_from_roll(g->guild_done, rng_range(&g->guild_rng, 0, 99))
+                      : GUILD_CONTRACT_STANDARD;
+    const SpecialContractDef *sdef = guild_special_def(special);
+    int hunt = sdef != NULL;
     if (hunt) {
-        used[GUILD_DRAGON_HUNT.customer] = 1; /* 通常契約の依頼主が Dragon Hunt の依頼主と重ならない */
+        used[sdef->customer] = 1; /* 通常契約の依頼主が特別契約の依頼主と重ならない */
     }
     for (int i = 0; i < GUILD_OFFER_COUNT - hunt; i++) {
         int diff = guild_pick_difficulty(&g->guild_rng, g->day); /* 先に難易度を決め、その後で数値を決める */
@@ -186,19 +239,18 @@ void guild_refresh_board(GameState *g) {
         c->reward_qty = 0;
     }
     if (hunt) {
-        const DragonHuntDef *h = &GUILD_DRAGON_HUNT;
         GuildContract *c = &g->guild_board[g->guild_board_count++];
         c->id = g->guild_next_id++;
-        c->customer_type = h->customer;
-        c->min_fit = h->min_fit;
-        c->difficulty = h->difficulty;
-        c->gold = h->gold;
-        c->rep = h->rep;
-        c->days = h->days;
+        c->customer_type = sdef->customer;
+        c->min_fit = sdef->min_fit;
+        c->difficulty = sdef->difficulty;
+        c->gold = sdef->gold;
+        c->rep = sdef->rep;
+        c->days = sdef->days;
         c->deadline_day = 0;
-        c->kind = GUILD_CONTRACT_DRAGON_HUNT;
-        c->reward_mat = h->reward_mat;
-        c->reward_qty = h->reward_qty;
+        c->kind = special;
+        c->reward_mat = sdef->reward_mat;
+        c->reward_qty = sdef->reward_qty;
     }
 }
 
@@ -284,7 +336,7 @@ GuildResult guild_deliver(GameState *g, int active_idx, int inv_idx, GuildOutcom
         r = GUILD_ERR_WRONG_TYPE;
     } else if (o.fit < c.min_fit) {
         r = GUILD_ERR_LOW_FIT;
-    } else if (c.kind == GUILD_CONTRACT_DRAGON_HUNT) {
+    } else if (c.kind != GUILD_CONTRACT_STANDARD) {
         /* 報酬を受け取れるかは、何かを変える前に判断する (受け取れないなら装備・金・評判・契約は一切そのまま) */
         if (c.reward_qty < 1 || c.reward_mat < 0 || c.reward_mat >= MAT_COUNT || !MATERIALS[c.reward_mat].hunt_only) {
             r = GUILD_ERR_RANGE;
@@ -300,17 +352,19 @@ GuildResult guild_deliver(GameState *g, int active_idx, int inv_idx, GuildOutcom
         return r;
     }
 
-    o.gold = c.gold;
+    /* Guild Assembly: 納品した日 (g->day) のイベントだけが決める。掲示日・受注日は関係ない。評判には上乗せしない */
+    o.bonus_gold = event_guild_bonus(c.gold, g->day);
+    o.gold = c.gold + o.bonus_gold;
     o.rep_gain = g->rep + c.rep > BAL.rep_cap ? BAL.rep_cap - g->rep : c.rep;
-    o.profit = c.gold - e.cost;
-    money_add(g, c.gold);
+    o.profit = o.gold - e.cost;
+    money_add(g, o.gold);
     g->rep += o.rep_gain;
-    sat_add(&g->report.guild_gold, c.gold, 0, DAY_CAP);
+    sat_add(&g->report.guild_gold, o.gold, 0, DAY_CAP);
     sat_add(&g->report.guild_done, 1, 0, STAT_CAP);
     sat_add(&g->report.cogs, e.cost, 0, DAY_CAP); /* アイテムは販売時と同様に消費される */
     sat_add(&g->report.rep_delta, o.rep_gain, -DAY_CAP, DAY_CAP);
     sat_add(&g->guild_done, 1, 0, STAT_CAP);
-    if (c.kind == GUILD_CONTRACT_DRAGON_HUNT) {
+    if (c.kind != GUILD_CONTRACT_STANDARD) {
         g->mat_stock[c.reward_mat] += c.reward_qty; /* 上限は上で検査済み。無料の報酬: mat_cost は増やさない (原価 0) */
         o.reward_mat = c.reward_mat;
         o.reward_qty = c.reward_qty;

@@ -38,7 +38,7 @@ set(LOOTSMITH_WARNINGS $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra> $<
 set(LOOTSMITH_CORE_SOURCES
     src/core/content_tables.c src/core/content_validate.c src/core/rng.c src/core/game_state.c
     src/core/upgrades.c src/core/market.c src/core/crafting.c src/core/inventory.c src/core/customers.c
-    src/core/day_flow.c src/core/guild_rank.c src/core/guild.c src/core/save.c src/core/icons.c)
+    src/core/day_flow.c src/core/events.c src/core/guild_rank.c src/core/guild.c src/core/save.c src/core/icons.c)
 set(LOOTSMITH_BOT_SOURCES src/bot/bot.c)
 set(LOOTSMITH_AUDIO_LOGIC_SOURCES src/audio/settings.c src/audio/sfx.c src/audio/asset_path.c)   # volume settings + sound ids: pure C (no raylib), covered by tests
 add_library(lootsmith_core STATIC ${LOOTSMITH_CORE_SOURCES})
@@ -76,6 +76,20 @@ if(LOOTSMITH_BUILD_TESTS)
   endif()
   add_test(NAME logic COMMAND test_sim WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
   set_tests_properties(logic PROPERTIES FAIL_REGULAR_EXPRESSION "FAIL ")
+
+  # The Ascendant Era: new rank / blueprints / materials / Relic Expedition / daily events
+  add_executable(test_ascendant tests/test_ascendant.c ${LOOTSMITH_CORE_SOURCES})
+  target_include_directories(test_ascendant PRIVATE src)
+  target_compile_options(test_ascendant PRIVATE ${LOOTSMITH_WARNINGS})
+  if(UNIX)
+    target_link_libraries(test_ascendant PRIVATE m)
+  endif()
+  if(LOOTSMITH_SANITIZE AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(test_ascendant PRIVATE -g -fsanitize=address,undefined)
+    target_link_options(test_ascendant PRIVATE -fsanitize=address,undefined)
+  endif()
+  add_test(NAME ascendant COMMAND test_ascendant WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+  set_tests_properties(ascendant PROPERTIES FAIL_REGULAR_EXPRESSION "FAIL ")
 
   # settings file, sound ids / one-sound-per-event logic, and the shipped audio files (assets/audio)
   add_executable(test_audio tests/test_audio.c ${LOOTSMITH_AUDIO_LOGIC_SOURCES})

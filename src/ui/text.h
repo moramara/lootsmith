@@ -33,6 +33,7 @@
 #define T_OPT_HINT4 "Changes apply at once and are saved automatically."
 #define T_HUNT_ONLY "HUNT ONLY"
 #define T_DRAGON_HUNT_TAG "DRAGON HUNT"
+#define T_RELIC_TAG "RELIC EXPEDITION"
 #define T_OPT_NODEVICE "No audio device found: sound stays off."
 
 static const char *const T_NAV[8] = {"[1] MAIN",    "[2] MARKET", "[3] CRAFT", "[4] STOCK",
@@ -66,7 +67,7 @@ static inline const char *text_result(Result r) {
         case R_ERR_LIMIT:
             return "The calendar ends here: this is the last possible day.";
         case R_ERR_NOT_FOR_SALE:
-            return "Not sold here! Win it from a Dragon Hunt contract.";
+            return "Not sold here! Win it from a Dragon Hunt / Relic Expedition contract.";
     }
     return "Error.";
 }
@@ -143,8 +144,9 @@ static const char *const T_HELP_LINES[] = {
     "             No fees, no penalties. A contract not delivered by its due day",
     "             lapses at that day's settlement. The board is renewed every morning.",
     "@DRAGONHUNT",
+    "@RELIC",
     "  RANK       your guild rank follows the contracts you DELIVERED (lapsed ones",
-    "             do not count). Each rank hands you a blueprint:",
+    "             do not count). Each rank hands you blueprint plans (up to 3 at once):",
     "@BLUEPRINTS",
     "             Locked equipment cannot be crafted and its customers do not show up",
     "             (also not on the board). Plans: BLUEPRINTS [B] on the guild screen.",
@@ -180,6 +182,16 @@ static const char *const T_HELP_LINES[] = {
     "@DRAGONODDS",
     "  The two traits are equally likely. If the roll fails you get a normal trait as",
     "  usual. Items made without Dragon Scale never get a dragon trait.",
+    "",
+    "ASTRAL SHARD",
+    "  Astral Shard (a Relic Expedition reward) is a rare arcane material: HUNT ONLY, never sold.",
+    "  Use it as main (2) or sub (1) material like any other. Each Shard adds a rarity value",
+    "  to the item (2 as main, 1 as sub), so a finished item sells for more. Reward cost: 0.",
+    "",
+    "DAILY EVENTS",
+    "  The day number alone decides the event (7-day cycle: phase = (day - 1) % 7).",
+    "  Nothing is saved and no dice are rolled. Days with no event play as usual.",
+    "@EVENTS",
     "",
     "SAVES AND RANDOMNESS",
     "  Save format version 4 stores every item's quality and trait, the state of",

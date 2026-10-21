@@ -22,6 +22,15 @@ void screen_settle(App *a) {
         txt(TextFormat("Delivered  %d", r->guild_done), x + 215, y + 32, C_TEXT);
         txt(TextFormat("Expired  %d", r->guild_expired), x + 215, y + 48, r->guild_expired ? C_BAD : C_TEXT);
     }
+    { /* 日替わりイベント: 今日 (終わった日) と明日 (市場の値札はもう明日の価格)。日付から導くだけ */
+        int ev = day_event(g->day), nx = day_event(g->day + 1);
+        if (ev != EVENT_NONE) {
+            txt_fit(TextFormat("Today: %s", DAY_EVENTS[ev].name), x + 215, y + 118, 150, event_color(ev));
+        }
+        if (nx != EVENT_NONE) {
+            txt_fit(TextFormat("Tomorrow: %s", DAY_EVENTS[nx].name), x + 215, y + 134, 150, event_color(nx));
+        }
+    }
     txt("TOMORROW'S MARKET", x, y + 160, C_DIM);
     int nmk = market_mat_count(); /* 市場に並ぶ素材だけ (買えない素材に価格はない) */
     bool compact =

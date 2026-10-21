@@ -153,6 +153,63 @@ const MaterialDef MATERIALS[MAT_COUNT] = {
                           .hunt_only = 1,
                           .rarity_value =
                               18}, /* Scale 3 個で +54: Forge 0 の Wyrmcleaver で Steel+Steel (価値 77) を上回る */
+    /* The Ascendant Era: 市場で買える高級素材 3 種。通常の素材と同じ計算 (混合・Forge・品質・特性・価値) をそのまま使う
+     */
+    [MAT_MITHRIL] = {.name = "Mithril",
+                     .desc = "Light and strong metal for elite weapons.",
+                     .icon = "mithril",
+                     .color = ICOL(150, 214, 232),
+                     .color_dark = ICOL(78, 134, 168),
+                     .base_price = 28,
+                     .min_price = 20,
+                     .atk = 11,
+                     .def = 8,
+                     .mag = 2,
+                     .dur = 9,
+                     .wt = 4},
+    [MAT_MOONSTONE] = {.name = "Moonstone",
+                       .desc = "A pale crystal that channels arcane power.",
+                       .icon = "moonstone",
+                       .color = ICOL(214, 220, 246),
+                       .color_dark = ICOL(128, 138, 190),
+                       .base_price = 24,
+                       .min_price = 17,
+                       .atk = 2,
+                       .def = 3,
+                       .mag = 11,
+                       .dur = 4,
+                       .wt = 1},
+    [MAT_EMBERGLASS] =
+        {.name = "Emberglass",
+         .desc = "Volcanic glass with a keen but brittle edge.",
+         .icon = "emberglass",
+         .color = ICOL(244, 120, 56),
+         .color_dark = ICOL(150, 52, 34),
+         .base_price =
+             12, /* 仕様の 22 から調整: Obsidian (13) より ATK が低いのに高価だと、常に劣った選択肢になるため。
+                  * 安価で頑丈 (DUR / DEF が上)・軽い代わりに ATK が低い素材として差別化する */
+         .min_price = 8,
+         .atk = 10,
+         .def = 2,
+         .mag = 1,
+         .dur = 4,
+         .wt = 3},
+    /* Relic Expedition の報酬専用の希少な魔力素材。市場では買えない (hunt_only)。Dragon Scale
+     * と同じく、報酬の分の原価は 0 で、 rarity_value が 3 個分 (+75) 価値に加わる */
+    [MAT_ASTRAL_SHARD] = {.name = "Astral Shard",
+                          .desc = "A rare shard recovered from a planar expedition.",
+                          .icon = "astralshard",
+                          .color = ICOL(124, 204, 255),
+                          .color_dark = ICOL(62, 104, 200),
+                          .base_price = 40,
+                          .min_price = 30,
+                          .atk = 5,
+                          .def = 3,
+                          .mag = 12,
+                          .dur = 4,
+                          .wt = 1,
+                          .hunt_only = 1,
+                          .rarity_value = 25},
 };
 
 const EquipDef EQUIPS[EQ_COUNT] = {
@@ -237,6 +294,31 @@ const EquipDef EQUIPS[EQ_COUNT] = {
                         .mag = 1,
                         .dur = 9,
                         .wt = 5},
+    /* Ascendant Smith の設計図で解放される 3 つ */
+    [EQ_ASTRAL_BLADE] = {.name = "Astral Blade",
+                         .desc = "Light blade: ATK and MAG.",
+                         .icon = "astralblade",
+                         .atk = 15,
+                         .def = 2,
+                         .mag = 4,
+                         .dur = 9,
+                         .wt = 3},
+    [EQ_AEGIS_OF_DAWN] = {.name = "Aegis of Dawn",
+                          .desc = "Radiant bulwark: huge DEF and DUR.",
+                          .icon = "aegis",
+                          .atk = 2,
+                          .def = 15,
+                          .mag = 2,
+                          .dur = 13,
+                          .wt = 7},
+    [EQ_VOID_CODEX] = {.name = "Void Codex",
+                       .desc = "Forbidden tome: peak MAG, fragile.",
+                       .icon = "voidcodex",
+                       .atk = 1,
+                       .def = 3,
+                       .mag = 16,
+                       .dur = 5,
+                       .wt = 2},
 };
 
 const CustomerDef CUSTOMER_DEFS[CUST_TYPE_COUNT] = {
@@ -451,6 +533,64 @@ const CustomerDef CUSTOMER_DEFS[CUST_TYPE_COUNT] = {
                         .fit_min_hi = 75,
                         .tol_lo = 1000,
                         .tol_hi = 1300},
+    /* 最上位ランク (Ascendant Smith) の設計図で解放される客。人物スプライトは既存のものを流用し、パレットだけ変える */
+    [CT_DUELIST] = {.name = "Duelist",
+                    .desc = "Wants a swift, arcane blade.",
+                    .priority = "ATK DUR LIGHT",
+                    .icon = "ranger",
+                    .hat = ICOL(150, 40, 70),
+                    .armor = ICOL(40, 44, 72),
+                    .top = ICOL_NONE,
+                    .wants_eq = EQ_ASTRAL_BLADE,
+                    .w_atk = 50,
+                    .w_def = 0,
+                    .w_mag = 10,
+                    .w_dur = 20,
+                    .w_light = 20,
+                    .budget_min = 150,
+                    .budget_max = 250,
+                    .fit_min_lo = 58,
+                    .fit_min_hi = 82,
+                    .tol_lo = 1000,
+                    .tol_hi = 1300},
+    [CT_SENTINEL] = {.name = "Sentinel",
+                     .desc = "Guards the gate with a great shield.",
+                     .priority = "DEF DUR",
+                     .icon = "knight",
+                     .hat = ICOL(214, 190, 96),
+                     .armor = ICOL(70, 86, 120),
+                     .top = ICOL(250, 244, 214),
+                     .wants_eq = EQ_AEGIS_OF_DAWN,
+                     .w_atk = 5,
+                     .w_def = 55,
+                     .w_mag = 0,
+                     .w_dur = 35,
+                     .w_light = 5,
+                     .budget_min = 145,
+                     .budget_max = 235,
+                     .fit_min_lo = 60,
+                     .fit_min_hi = 82,
+                     .tol_lo = 1000,
+                     .tol_hi = 1300},
+    [CT_RIFT_SEEKER] = {.name = "Rift Seeker",
+                        .desc = "Hunts planar secrets in tomes.",
+                        .priority = "MAG DUR",
+                        .icon = "arcanist",
+                        .hat = ICOL(40, 120, 150),
+                        .armor = ICOL(34, 30, 76),
+                        .top = ICOL(120, 232, 255),
+                        .wants_eq = EQ_VOID_CODEX,
+                        .w_atk = 0,
+                        .w_def = 5,
+                        .w_mag = 70,
+                        .w_dur = 20,
+                        .w_light = 5,
+                        .budget_min = 165,
+                        .budget_max = 270,
+                        .fit_min_lo = 62,
+                        .fit_min_hi = 84,
+                        .tol_lo = 1000,
+                        .tol_hi = 1300},
 };
 
 /* 各アップグレードの効果は ID を通じてロジックが適用する: UP_FORGE はクラフトの能力値を、UP_STORE は 1 日の客数を、
@@ -533,7 +673,7 @@ const int DRAGON_TRAIT_IDS[DRAGON_TRAIT_KINDS] = {EQ_TRAIT_DRACONIC_EDGE, EQ_TRA
  * を参照)。 */
 const int QUALITY_RATE_PCT[RANK_COUNT][QUALITY_COUNT] = {
     [RANK_APPRENTICE] = {70, 25, 5, 0},    [RANK_JOURNEYMAN] = {55, 32, 12, 1}, [RANK_MASTER] = {40, 35, 20, 5},
-    [RANK_GRANDMASTER] = {25, 35, 28, 12}, [RANK_MYTHIC] = {20, 33, 30, 17},
+    [RANK_GRANDMASTER] = {25, 35, 28, 12}, [RANK_MYTHIC] = {20, 33, 30, 17},    [RANK_ASCENDANT] = {15, 30, 35, 20},
 };
 
 /* ギルドランク: 納品済み契約数 (GameState.guild_done) から導出する。 */
@@ -543,6 +683,7 @@ const GuildRankDef GUILD_RANKS[RANK_COUNT] = {
     [RANK_MASTER] = {.name = "Master Craftsman", .need_done = 15},
     [RANK_GRANDMASTER] = {.name = "Grandmaster", .need_done = 30},
     [RANK_MYTHIC] = {.name = "Mythic Smith", .need_done = 50},
+    [RANK_ASCENDANT] = {.name = "Ascendant Smith", .need_done = 75},
 };
 
 /* 制限された装備タイプごとに設計図が 1 つ。解放に関することはすべてここにある: 装備・その客・ランクは、
@@ -572,6 +713,24 @@ const BlueprintDef BLUEPRINTS[BP_COUNT] = {
                         .rank = RANK_MYTHIC,
                         .equip = EQ_WYRMCLEAVER,
                         .customer = CT_WYRM_HUNTER},
+    [BP_ASTRAL_BLADE] = {.name = "Astral Blade Plans",
+                         .desc = "Plans for a light blade of ATK and MAG.",
+                         .icon = "astralblade",
+                         .rank = RANK_ASCENDANT,
+                         .equip = EQ_ASTRAL_BLADE,
+                         .customer = CT_DUELIST},
+    [BP_AEGIS_OF_DAWN] = {.name = "Aegis of Dawn Plans",
+                          .desc = "Plans for a radiant heavy shield.",
+                          .icon = "aegis",
+                          .rank = RANK_ASCENDANT,
+                          .equip = EQ_AEGIS_OF_DAWN,
+                          .customer = CT_SENTINEL},
+    [BP_VOID_CODEX] = {.name = "Void Codex Plans",
+                       .desc = "Plans for a tome of peak magic.",
+                       .icon = "voidcodex",
+                       .rank = RANK_ASCENDANT,
+                       .equip = EQ_VOID_CODEX,
+                       .customer = CT_RIFT_SEEKER},
 };
 
 /* ギルド契約の調整値。報酬は納品時にのみ支払われ、手数料やペナルティはない。 */
@@ -603,3 +762,43 @@ const DragonHuntDef GUILD_DRAGON_HUNT = {.name = "Dragon Hunt",
                                          .reward_qty = 1,
                                          .min_done = 50,
                                          .spawn_pct = 25};
+
+/* Relic Expedition: guild_done が min_done (Ascendant Smith) 以上のとき、掲示板の更新ごとに spawn_pct% で 1
+ * 件だけ掲示される。 抽選は Dragon Hunt と同じ 1 回のロール (0..99) を共有する: 0..spawn_pct-1 が Relic
+ * Expedition、そのすぐ上の GUILD_DRAGON_HUNT.spawn_pct 個が Dragon Hunt、残りは特別契約なし
+ * (guild_special_from_roll())。 依頼主は Rift Seeker (必要装備は Void Codex)。最低 FIT は通常の equip_fit() で判定する
+ * (専用の計算式はない)。 */
+const SpecialContractDef GUILD_RELIC_EXPEDITION = {.name = "Relic Expedition",
+                                                   .customer = CT_RIFT_SEEKER,
+                                                   .min_fit = 72,
+                                                   .difficulty = GD_HARD,
+                                                   .gold = 260,
+                                                   .rep = 5,
+                                                   .days = 3,
+                                                   .reward_mat = MAT_ASTRAL_SHARD,
+                                                   .reward_qty = 2,
+                                                   .min_done = 75,
+                                                   .spawn_pct = 20};
+
+/* 日替わりイベント。phase = (day - 1) % EVENT_CYCLE_DAYS の日に発生する (Market Caravan は 2, 9, 16, 23, 30 日目...)。
+ * 効果の数値はすべてここにあり、日付から導出するだけなので保存しない。 */
+const DayEventDef DAY_EVENTS[EVENT_COUNT] = {
+    [EVENT_NONE] = {.name = "No event", .desc = "A quiet day.", .effect = "", .phase = -1},
+    [EVENT_MARKET_CARAVAN] = {.name = "Market Caravan",
+                              .desc = "Merchants slash prices today.",
+                              .effect = "Materials 15% off today",
+                              .phase = 1,
+                              .market_discount_pct = 15},
+    [EVENT_ARCANE_CONVERGENCE] = {.name = "Arcane Convergence",
+                                  .desc = "Ley lines surge in the forge.",
+                                  .effect = "Better odds: Common -7, Masterwork +5, Legendary +2",
+                                  .phase = 3,
+                                  .quality_shift_common = 7,
+                                  .quality_add_masterwork = 5,
+                                  .quality_add_legendary = 2},
+    [EVENT_GUILD_ASSEMBLY] = {.name = "Guild Assembly",
+                              .desc = "The guild pays extra today.",
+                              .effect = "Contract gold +10% today",
+                              .phase = 5,
+                              .guild_bonus_pct = 10},
+};

@@ -7,7 +7,7 @@
  * "@MATS" (行の途中: 素材名) を、コンテンツテーブルから埋める。 */
 #define HELP_GEN_LINES                                                                                                 \
     (CUST_TYPE_COUNT + UP_COUNT + GD_COUNT + BP_COUNT + QUALITY_COUNT + EQ_TRAIT_COUNT + RANK_COUNT +                  \
-     DRAGON_SCALE_USE_MAX + 8)
+     DRAGON_SCALE_USE_MAX + EVENT_COUNT + 24)
 
 #define HELP_LINE_LEN 160
 
@@ -47,8 +47,8 @@ static int help_build(const char **out, char (*store)[HELP_LINE_LEN]) {
         } else if (!strcmp(l, "@DRAGONHUNT")) {
             const DragonHuntDef *h = &GUILD_DRAGON_HUNT;
             snprintf(store[sn], HELP_LINE_LEN,
-                     "  %-10s Mythic Smith only: %d%% chance per morning, 1 at most on the board.", "DRAGON HUNT",
-                     h->spawn_pct);
+                     "  %-10s Mythic Smith or higher: %d%% chance per morning, 1 special contract at most.",
+                     "DRAGON HUNT", h->spawn_pct);
             out[n++] = store[sn++];
             snprintf(store[sn], HELP_LINE_LEN, "             %s wants a %s, FIT %d+, %d gold + %d rep, %d days.",
                      CUSTOMER_DEFS[h->customer].name, EQUIPS[CUSTOMER_DEFS[h->customer].wants_eq].name, h->min_fit,
@@ -60,6 +60,30 @@ static int help_build(const char **out, char (*store)[HELP_LINE_LEN]) {
             snprintf(store[sn], HELP_LINE_LEN,
                      "             No room (%s at %d) = delivery refused. Use it as craft material.",
                      MATERIALS[h->reward_mat].name, BAL.stock_cap);
+            out[n++] = store[sn++];
+        } else if (!strcmp(l, "@RELIC")) {
+            const SpecialContractDef *h = &GUILD_RELIC_EXPEDITION;
+            snprintf(store[sn], HELP_LINE_LEN,
+                     "  %-10s %s only: %d%% chance per morning (one roll shared with Dragon Hunt).", "RELIC EXP.",
+                     GUILD_RANKS[guild_rank(h->min_done)].name, h->spawn_pct);
+            out[n++] = store[sn++];
+            snprintf(store[sn], HELP_LINE_LEN, "             %s wants a %s, FIT %d+, %d gold + %d rep, %d days.",
+                     CUSTOMER_DEFS[h->customer].name, EQUIPS[CUSTOMER_DEFS[h->customer].wants_eq].name, h->min_fit,
+                     h->gold, h->rep, h->days);
+            out[n++] = store[sn++];
+            snprintf(store[sn], HELP_LINE_LEN,
+                     "             Reward: +%d %s (hunt only, free). No room = delivery refused.", h->reward_qty,
+                     MATERIALS[h->reward_mat].name);
+            out[n++] = store[sn++];
+        } else if (!strcmp(l, "@EVENTS")) {
+            for (int e = EVENT_NONE + 1; e < EVENT_COUNT; e++) {
+                snprintf(store[sn], HELP_LINE_LEN, "  Day %d, %d, %d...  %s: %s", DAY_EVENTS[e].phase + 1,
+                         DAY_EVENTS[e].phase + 1 + EVENT_CYCLE_DAYS, DAY_EVENTS[e].phase + 1 + 2 * EVENT_CYCLE_DAYS,
+                         DAY_EVENTS[e].name, DAY_EVENTS[e].effect);
+                out[n++] = store[sn++];
+            }
+            snprintf(store[sn], HELP_LINE_LEN,
+                     "  Hunt-only materials never get the Caravan discount. Guild Assembly adds no reputation.");
             out[n++] = store[sn++];
         } else if (!strcmp(l, "@QUALITIES")) {
             for (int q = 0; q < QUALITY_COUNT; q++) {

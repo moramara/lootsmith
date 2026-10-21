@@ -37,6 +37,11 @@ enum {
     MAT_SILVER,
     MAT_OBSIDIAN,
     MAT_DRAGON_SCALE, /* 市場では買えない (hunt_only)。Dragon Hunt の報酬でのみ手に入る */
+    /* The Ascendant Era: 市場で買える 3 種 (価格変動で rng を 1 回ずつ引く) と、Relic Expedition の報酬専用素材 */
+    MAT_MITHRIL,
+    MAT_MOONSTONE,
+    MAT_EMBERGLASS,
+    MAT_ASTRAL_SHARD, /* 市場では買えない (hunt_only)。Relic Expedition の報酬でのみ手に入る */
     MAT_COUNT
 };
 enum {
@@ -50,6 +55,9 @@ enum {
     EQ_RUNE_BOW,
     EQ_CRYSTAL_ORB,
     EQ_WYRMCLEAVER,
+    EQ_ASTRAL_BLADE, /* Ascendant Smith の設計図 */
+    EQ_AEGIS_OF_DAWN,
+    EQ_VOID_CODEX,
     EQ_COUNT
 };
 enum {
@@ -64,6 +72,9 @@ enum {
     CT_RANGER,
     CT_ARCANIST,
     CT_WYRM_HUNTER,
+    CT_DUELIST, /* Ascendant Smith の設計図で解放される客 */
+    CT_SENTINEL,
+    CT_RIFT_SEEKER,
     CUST_TYPE_COUNT
 };
 enum { UP_FORGE, UP_STORE, UP_SUPPLY, UP_COUNT };
@@ -217,6 +228,7 @@ extern const int DRAGON_TRAIT_IDS[DRAGON_TRAIT_KINDS];       /* 特殊特性が�
 #define GUILD_ID_MAX 1000000000 /* 契約 ID はこの値未満で発行する。guild_refresh_board() はこれを超えずに振り直す */
 #define MONEY_FLOOR (-1000000)  /* 所持金はこの値を下回らない (サンドボックスに破産はない) */
 
+#define MARKET_RNG_MATS (MAT_DRAGON_SCALE + 1) /* この ID 未満の買える素材だけが、価格変動で `rng` を 1 回ずつ引く (market.c)。固定 */
 extern const Balance BAL;
 extern const MaterialDef MATERIALS[MAT_COUNT];
 extern const EquipDef EQUIPS[EQ_COUNT];
@@ -258,10 +270,17 @@ typedef struct {
     int reward_mat; /* 報酬素材の ID (reward_qty == 0 のときは 0) */
     int reward_qty; /* 報酬素材の数。0 = なし */
 } GuildContract;
-enum { GUILD_CONTRACT_STANDARD, GUILD_CONTRACT_DRAGON_HUNT, GUILD_CONTRACT_KIND_COUNT }; /* 追記のみ */
+enum {
+    GUILD_CONTRACT_STANDARD,
+    GUILD_CONTRACT_DRAGON_HUNT,
+    GUILD_CONTRACT_RELIC_EXPEDITION, /* Ascendant Smith 以降の特別契約 (報酬: Astral Shard) */
+    GUILD_CONTRACT_KIND_COUNT
+}; /* 追記のみ */
 
-/* Dragon Hunt: Mythic Smith 到達後に低確率で掲示される特別契約。数値はすべてこの 1 つのテーブルにある
- * (通常契約の GUILD_DIFFS / GUILD_SPAWN とは独立。通常契約の報酬・難易度・出現率には影響しない)。 */
+/* 特別契約 (Dragon Hunt / Relic Expedition) の定義。数値はすべてこのテーブルの行にある
+ * (通常契約の GUILD_DIFFS / GUILD_SPAWN とは独立。通常契約の報酬・難易度・出現率には影響しない)。
+ * Dragon Hunt: Mythic Smith 到達後、掲示板の更新ごとに低確率で掲示される。
+ * Relic Expedition: Ascendant Smith 到達後、同じ抽選 1 回の中で Dragon Hunt と排他的に掲示される。 */
 typedef struct {
     const char *name;
     int customer; /* 依頼主 (その wants_eq が必要装備) */
@@ -272,7 +291,9 @@ typedef struct {
     int min_done;               /* 抽選の対象になる guild_done の下限 (Mythic Smith) */
     int spawn_pct;              /* 掲示板の更新ごとの出現確率 (%)。抽選は roll(0..99) < spawn_pct */
 } DragonHuntDef;
+typedef DragonHuntDef SpecialContractDef; /* 同じ形のテーブル行 (Relic Expedition も使う) */
 extern const DragonHuntDef GUILD_DRAGON_HUNT;
+extern const SpecialContractDef GUILD_RELIC_EXPEDITION;
 typedef enum {
     GUILD_OK = 0,
     GUILD_ERR_PHASE,       /* PH_PREP ではない、またはキャンペーンが終了している */
@@ -290,18 +311,29 @@ typedef struct {
     int gold, rep_gain; /* 実際に支払われた額 (評判は BAL.rep_cap で上限が掛かる) */
     int profit;         /* ゴールドから、消費したアイテムの原価を引いた額 (報酬素材は原価ゼロの無料報酬: 含めない) */
     int reward_mat, reward_qty; /* 実際に付与された報酬素材 (なければ 0 / 0) */
+    int bonus_gold;             /* gold のうち、日替わりイベント (Guild Assembly) による上乗せ分。ない日は 0 */
 } GuildOutcome;
 
 /* ---------- ギルドランクと設計図 ----------
  * ランクは保存しない。GameState.guild_done (納品済み契約数) だけから決まる純粋関数なので、guild_done と食い違うことは
  * ありえず、セーブファイルの容量も使わない。設計図は、ランクに達すると 1 つの装備タイプ (とそれを求める客) を解放する。
  * guild_done が減ることはないのでランクも下がらない。どの設計図にも載っていない装備は常に使える。 */
-enum { RANK_APPRENTICE, RANK_JOURNEYMAN, RANK_MASTER, RANK_GRANDMASTER, RANK_MYTHIC, RANK_COUNT };
+enum { RANK_APPRENTICE, RANK_JOURNEYMAN, RANK_MASTER, RANK_GRANDMASTER, RANK_MYTHIC, RANK_ASCENDANT, RANK_COUNT };
 typedef struct {
     const char *name;
     int need_done;
 } GuildRankDef; /* need_done: そのランクに必要な納品済み契約数 */
-enum { BP_WARHAMMER, BP_RUNE_BOW, BP_CRYSTAL_ORB, BP_WYRMCLEAVER, BP_COUNT }; /* 他の ID と同じく追記のみ可 */
+enum {
+    BP_WARHAMMER,
+    BP_RUNE_BOW,
+    BP_CRYSTAL_ORB,
+    BP_WYRMCLEAVER,
+    BP_ASTRAL_BLADE,
+    BP_AEGIS_OF_DAWN,
+    BP_VOID_CODEX,
+    BP_COUNT
+}; /* 他の ID と同じく追記のみ可 */
+#define BLUEPRINT_NAME_MAX_LEN 20 /* 設計図の名前は「<装備名> Plans」なので、通常のコンテンツ名 (NAME_MAX_LEN) より長くてよい */
 typedef struct {
     const char *name, *desc, *icon;
     int rank;     /* それを解放するランク (1..RANK_COUNT-1) */
@@ -375,11 +407,32 @@ uint32_t campaign_seed(uint32_t previous,
                        uint32_t clock); /* 次の新しいキャンペーンのシード (UI は時計を渡す)。最初のキャンペーンでは
                                            --seed N をそのまま使う */
 
+/* ---------- 日替わりイベント (日付だけから決まる。保存せず、乱数も使わない) ----------
+ * phase = (day - 1) % EVENT_CYCLE_DAYS。EVENT_NONE の日は通常どおり。イベントの判定はこの純粋関数 1 つだけで、
+ * 市場・クラフト・ギルド・UI はすべて day_event() を通して参照する (別の場所に日付の判定を書かない)。 */
+#define EVENT_CYCLE_DAYS 7
+enum { EVENT_NONE, EVENT_MARKET_CARAVAN, EVENT_ARCANE_CONVERGENCE, EVENT_GUILD_ASSEMBLY, EVENT_COUNT }; /* 追記のみ */
+typedef struct {
+    const char *name, *desc, *effect; /* effect: 画面に出す短い効果の説明 */
+    int phase;                        /* (day - 1) % EVENT_CYCLE_DAYS がこの値の日に発生する。EVENT_NONE は -1 */
+    int market_discount_pct;          /* Market Caravan: 買える素材の購入価格を追加で割り引く (%) */
+    int quality_shift_common;         /* Arcane Convergence: Common から移すポイント */
+    int quality_add_masterwork, quality_add_legendary; /* 移した先 (Masterwork / Legendary への加算) */
+    int guild_bonus_pct;              /* Guild Assembly: その日の納品のゴールド報酬への上乗せ (%) */
+} DayEventDef;
+extern const DayEventDef DAY_EVENTS[EVENT_COUNT];
+int day_event(int day);                 /* EVENT_*。day < 1 は EVENT_NONE */
+const char *day_event_name(int event);  /* 不正な ID なら "?" */
+int event_market_discount_pct(int day); /* その日の市場の追加割引 (%)。0 = なし */
+int event_guild_bonus(int gold, int day); /* その日に納品した契約のゴールド報酬への上乗せ額 (整数、四捨五入、0 以上) */
+
 /* ---------- ライフサイクル ---------- */
 void game_init(GameState *g, uint32_t seed);
 int game_validate(const GameState *g); /* 1 = すべての不変条件が成り立つ */
 const char *content_validate(void);    /* NULL = すべてのコンテンツテーブルが整合している、それ以外はメッセージ */
 const char *content_validate_dragon_hunt(const DragonHuntDef *h); /* 任意の Dragon Hunt 定義の検査 (NULL = 妥当) */
+const char *content_validate_special_contracts(void); /* Dragon Hunt + Relic Expedition の整合性 (共有ロールの帯など) */
+const char *content_validate_events(const DayEventDef defs[EVENT_COUNT]); /* 任意の日替わりイベント表の検査 (NULL = 妥当) */
 const char *content_validate_traits(const TraitDef defs[EQ_TRAIT_COUNT]); /* 任意の特性テーブルの検査 (NULL = 妥当) */
 const char *content_validate_dragon_forging(const int pct[DRAGON_SCALE_USE_MAX + 1],
                                             const int ids[DRAGON_TRAIT_KINDS]); /* 任意の表の検査 (NULL = 妥当) */
@@ -416,6 +469,10 @@ void equipment_compute_stats(Equipment *e,
  *   equipment_build()     基本能力 + 品質 + 特性を一度に行う。同じアイテムに再度呼んでも安全 (最初から作り直す) */
 void quality_rates(int rank, int forge_level, int out[QUALITY_COUNT]);
 int quality_from_roll(int rank, int forge_level, int roll);
+/* 日付つき版 (日替わりイベント Arcane Convergence を含む): 基本確率 -> イベント補正 -> Forge 補正の順に適用し、合計は常に 100。
+ * 通常の日 (イベントなし) の結果は上の 2 つと同一。乱数の消費回数は変わらない (ロールを受け取るだけ) */
+void quality_rates_on_day(int rank, int forge_level, int day, int out[QUALITY_COUNT]);
+int quality_from_roll_on_day(int rank, int forge_level, int day, int roll);
 int trait_from_roll(int roll);
 int chance_roll_hits(int pct, int roll);
 int dragon_scale_uses(int main, int sub);
@@ -430,6 +487,7 @@ const char *quality_name(int quality);                               /* 不正�
 const char *trait_name(int trait);
 void craft_migrate_legacy(GameState *g); /* v3 より前の状態に craft_rng を与える (乱数は消費しない) */
 void equipment_price(Equipment *e);      /* e->cost と能力から value と rec_price を求める */
+int equipment_rarity_bonus(const Equipment *e); /* 価値に直接加わる希少度ボーナス: 2 * 主素材 + 副素材の rarity_value */
 int estimate_craft_cost(const GameState *g, int main, int sub);
 Result can_craft(const GameState *g, int eq, int main, int sub);
 Result craft_equipment(GameState *g, int eq, int main, int sub, int *out_idx);
@@ -479,6 +537,16 @@ int guild_item_fit(const GameState *g, int active_idx,
 int guild_dragon_hunt_eligible(int done);
 int guild_dragon_hunt_roll_hits(int roll);
 const char *guild_kind_name(int kind);
+/* 特別契約の抽選 (純粋関数: 乱数を引かない)。掲示板の更新ごとに、対象のときだけロール 0..99 を 1 回引いて分類する:
+ *   guild_special_eligible()   guild_done が特別契約の抽選対象か (Dragon Hunt の対象 = done >= 50)。対象外では乱数を引かない
+ *   guild_special_from_roll()  ロール -> GUILD_CONTRACT_STANDARD (特別契約なし) / DRAGON_HUNT / RELIC_EXPEDITION。
+ *                              done < 75: roll < 25 なら Dragon Hunt (従来どおり)。
+ *                              done >= 75: 0..19 Relic Expedition、20..44 Dragon Hunt、45..99 なし (Dragon Hunt は 25% のまま)
+ *   guild_special_def()        契約種別の定義 (通常契約や不正な値は NULL) */
+int guild_special_eligible(int done);
+int guild_special_from_roll(int done, int roll);
+const SpecialContractDef *guild_special_def(int kind);
+const SpecialContractDef *guild_reward_source(int mat); /* その素材 (hunt_only) を報酬にする特別契約。なければ NULL */
 
 /* ---------- アップグレード ---------- */
 int upgrade_cost(const GameState *g, int up); /* 最大レベルなら -1 */

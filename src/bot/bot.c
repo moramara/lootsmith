@@ -20,6 +20,10 @@ static const EquipPlan PLANS[EQ_COUNT] = {
     [EQ_RUNE_BOW] = {{{MAT_OBSIDIAN, MAT_COPPER}, {MAT_IRON, MAT_WOOD}}, 1},
     [EQ_CRYSTAL_ORB] = {{{MAT_SILVER, MAT_SILVER}, {MAT_SILVER, MAT_WOOD}}, 1},
     [EQ_WYRMCLEAVER] = {{{MAT_IRON, MAT_IRON}, {MAT_IRON, MAT_COPPER}}, 1},
+    /* Ascendant Smith の設計図装備: 新素材 (Mithril / Moonstone) も通常素材として仕入れる。hunt_only は使わない */
+    [EQ_ASTRAL_BLADE] = {{{MAT_OBSIDIAN, MAT_STEEL}, {MAT_MITHRIL, MAT_STEEL}}, 1},
+    [EQ_AEGIS_OF_DAWN] = {{{MAT_STEEL, MAT_IRON}, {MAT_IRON, MAT_WOOD}}, 1},
+    [EQ_VOID_CODEX] = {{{MAT_MANA, MAT_MOONSTONE}, {MAT_MOONSTONE, MAT_SILVER}}, 1},
 };
 
 typedef struct {
@@ -28,8 +32,10 @@ typedef struct {
     int upgrades;
     int guild_accepted;
     int guild_delivered;
-    int hunt_delivered; /* Dragon Hunt の納品数 */
-    int scales;         /* 報酬として受け取った素材の数 */
+    int hunt_delivered;  /* Dragon Hunt の納品数 */
+    int scales;          /* 報酬として受け取った Dragon Scale の数 */
+    int relic_delivered; /* Relic Expedition の納品数 */
+    int shards;          /* 報酬として受け取った Astral Shard の数 */
 } BotDayStats;
 
 static void log_action(BotRunner *bot, const char *fmt, ...) {
@@ -75,7 +81,7 @@ static int pick_item(const GameState *g, const Customer *c, int skip_mask) {
 
 /* 報酬素材を受け取る在庫枠があるか。契約に報酬がなければ常に空きあり (guild_deliver が使うのと同じ条件)。 */
 static int reward_slot_ok(const GameState *g, const GuildContract *k) {
-    if (k->kind != GUILD_CONTRACT_DRAGON_HUNT) {
+    if (k->kind == GUILD_CONTRACT_STANDARD) {
         return 1;
     }
     return k->reward_mat >= 0 && k->reward_mat < MAT_COUNT && k->reward_qty >= 1 &&
@@ -84,7 +90,8 @@ static int reward_slot_ok(const GameState *g, const GuildContract *k) {
 
 /* 契約要求を満たす最安レシピを探す。能力値の評価には Common 品の基本能力を使う。
  * 市場で買えない素材 (hunt_only) は仕入れられないので、レシピには使わない (貴重な報酬素材を契約の材料に浪費しない)。
- * 最低 FIT は通常の equip_fit() で判定する (Dragon Hunt 専用の計算はない)。 */
+ * 最低 FIT は通常の equip_fit() で判定する (Dragon Hunt / Relic Expedition 専用の計算はない)。Relic Expedition なら
+ * Void Codex を作れる最安のレシピ (最低 FIT 72 を現在の Forge で満たせるもの) が見つかったときだけ受注の候補になる。 */
 static int guild_recipe(const GameState *g, int customer_type, int min_fit, int *main, int *sub, int *cost) {
     int found = 0, best_cost = 1 << 30;
     int eq = CUSTOMER_DEFS[customer_type].wants_eq;
@@ -181,6 +188,9 @@ static void bot_guild_turn(GameState *g, BotDayStats *stats) {
             if (contract.kind == GUILD_CONTRACT_DRAGON_HUNT) {
                 stats->hunt_delivered++;
                 stats->scales += outcome.reward_qty;
+            } else if (contract.kind == GUILD_CONTRACT_RELIC_EXPEDITION) {
+                stats->relic_delivered++;
+                stats->shards += outcome.reward_qty;
             }
         }
     }
@@ -225,6 +235,10 @@ static void bot_prepare_day(BotRunner *bot) {
     if (stats.hunt_delivered > 0) {
         log_action(bot, "Dragon Hunt: delivered %d, +%d %s.", stats.hunt_delivered, stats.scales,
                    MATERIALS[GUILD_DRAGON_HUNT.reward_mat].name);
+    }
+    if (stats.relic_delivered > 0) {
+        log_action(bot, "Relic Expedition: delivered %d, +%d %s.", stats.relic_delivered, stats.shards,
+                   MATERIALS[GUILD_RELIC_EXPEDITION.reward_mat].name);
     }
     if (stats.guild_delivered > 0) {
         log_action(bot, "Guild: delivered %d contract(s).", stats.guild_delivered);

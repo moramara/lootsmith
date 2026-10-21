@@ -898,6 +898,13 @@ static char *as_older_build(const char *text, const char *counts_line) {
     char *a = replace_line(text, "counts ", counts_line);
     char *b = replace_line(a, "mat 7 ", NULL);
     free(a);
+    for (int m = 8; m < MAT_COUNT; m++) { /* The Ascendant Era の素材 (8..) も旧ビルドは書かない */
+        char key[16];
+        snprintf(key, sizeof key, "mat %d ", m);
+        char *c = replace_line(b, key, NULL);
+        free(b);
+        b = c;
+    }
     return b;
 }
 
@@ -1113,15 +1120,15 @@ static void test_content_pack1(void) {
     CHECK_EQ(MAT_SILVER, 5);
     CHECK_EQ(MAT_OBSIDIAN, 6);
     CHECK_EQ(MAT_DRAGON_SCALE, 7); /* Dragon Scale は末尾に追記された */
-    CHECK_EQ(MAT_COUNT, 8);
+    CHECK_EQ(MAT_COUNT, 12); /* +4: Mithril / Moonstone / Emberglass / Astral Shard */
     CHECK_EQ(EQ_DAGGER, 3);
     CHECK_EQ(EQ_SPEAR, 4);
     CHECK_EQ(EQ_GRIMOIRE, 5);
-    CHECK_EQ(EQ_COUNT, 10); /* +4 の設計図装備 */
+    CHECK_EQ(EQ_COUNT, 13); /* +4 の設計図装備、+3 (Ascendant Smith) */
     CHECK_EQ(CT_SCOUT, 4);
     CHECK_EQ(CT_LANCER, 5);
     CHECK_EQ(CT_SCHOLAR, 6);
-    CHECK_EQ(CUST_TYPE_COUNT, 11);
+    CHECK_EQ(CUST_TYPE_COUNT, 14);
     CHECK_EQ(UP_COUNT, 3); /* アップグレードは追加されていない */
 
     /* 素材: 名前、アイコン ID、価格、最低価格、ATK DEF MAG DUR WT。能力値は仕様どおり。Steel / Silver / Obsidian の
@@ -1273,7 +1280,7 @@ static void test_content_pack1(void) {
     int seen[CUST_TYPE_COUNT] = {0};
     for (int i = 0; i < 3000; i++) {
         Customer c;
-        customer_generate(&rng, 50, 50, &c); /* 50 件: すべての客が解放済み */
+        customer_generate(&rng, 50, 75, &c); /* 75 件: すべての客が解放済み */
         CHECK(c.type >= 0 && c.type < CUST_TYPE_COUNT);
         seen[c.type]++;
         const CustomerDef *d = &CUSTOMER_DEFS[c.type];
@@ -1361,7 +1368,7 @@ static void test_content_pack1_flow(void) {
     GameState q = g;
     force_open(&q, mk_customer(CT_SCHOLAR, 150, 40, 1100));
     char *t1 = save_text(&q);
-    CHECK(strstr(t1, "\ncounts 8 10 11 3\n") != NULL);
+    CHECK(strstr(t1, "\ncounts 12 13 14 3\n") != NULL);
     CHECK(strstr(t1, "\nmat 6 ") != NULL); /* Obsidian のレコード */
     GameState r;
     CHECK_EQ(load_text(&r, t1), SAVE_OK);
@@ -1424,7 +1431,7 @@ static void test_save_before_pack1(void) {
     CHECK_EQ(craft_equipment(&p, EQ_SPEAR, MAT_STEEL, MAT_STEEL, NULL), R_OK);
     /* 現在の形式で再保存すると、同一に再読み込みできる */
     char *t = save_text(&p);
-    CHECK(strstr(t, "counts 8 10 11 3") != NULL);
+    CHECK(strstr(t, "counts 12 13 14 3") != NULL);
     GameState r;
     CHECK_EQ(load_text(&r, t), SAVE_OK);
     char *t2 = save_text(&r);
@@ -2202,7 +2209,9 @@ static void test_guild_save(void) {
     }
     /* 契約は、書き手が知らなかった客を指名できない */
     {
-        char *lowc = replace_line(base, "counts ", "counts 8 6 5 3");
+        char lowhdr[64];
+        snprintf(lowhdr, sizeof lowhdr, "counts %d 6 5 3", MAT_COUNT);
+        char *lowc = replace_line(base, "counts ", lowhdr);
         char *x = replace_line(lowc, "gb ", "gb 11 5 50 1 55 2 3 0 0 0 0");
         CHECK_EQ(load_text(&probe, x), SAVE_ERR_VALUE);
         free(lowc);
@@ -2298,13 +2307,14 @@ static GameState at_done(int done) { /* すでに `done` 件の契約を納品�
 static void test_rank_tables(void) {
     puts("rank_tables");
     CHECK(content_validate() == NULL);
-    CHECK_EQ(RANK_COUNT, 5);
-    CHECK_EQ(BP_COUNT, 4);
+    CHECK_EQ(RANK_COUNT, 6);
+    CHECK_EQ(BP_COUNT, 7);
     static const struct {
         const char *name;
         int need;
     } ranks[] = {
-        {"Apprentice", 0}, {"Journeyman", 5}, {"Master Craftsman", 15}, {"Grandmaster", 30}, {"Mythic Smith", 50}};
+        {"Apprentice", 0}, {"Journeyman", 5}, {"Master Craftsman", 15},
+        {"Grandmaster", 30}, {"Mythic Smith", 50}, {"Ascendant Smith", 75}};
     for (int r = 0; r < RANK_COUNT; r++) {
         CHECK(!strcmp(GUILD_RANKS[r].name, ranks[r].name));
         CHECK_EQ(GUILD_RANKS[r].need_done, ranks[r].need);
@@ -2321,7 +2331,10 @@ static void test_rank_tables(void) {
     } bps[] = {{BP_WARHAMMER, RANK_JOURNEYMAN, EQ_WARHAMMER, CT_KNIGHT},
                {BP_RUNE_BOW, RANK_MASTER, EQ_RUNE_BOW, CT_RANGER},
                {BP_CRYSTAL_ORB, RANK_GRANDMASTER, EQ_CRYSTAL_ORB, CT_ARCANIST},
-               {BP_WYRMCLEAVER, RANK_MYTHIC, EQ_WYRMCLEAVER, CT_WYRM_HUNTER}};
+               {BP_WYRMCLEAVER, RANK_MYTHIC, EQ_WYRMCLEAVER, CT_WYRM_HUNTER},
+               {BP_ASTRAL_BLADE, RANK_ASCENDANT, EQ_ASTRAL_BLADE, CT_DUELIST},
+               {BP_AEGIS_OF_DAWN, RANK_ASCENDANT, EQ_AEGIS_OF_DAWN, CT_SENTINEL},
+               {BP_VOID_CODEX, RANK_ASCENDANT, EQ_VOID_CODEX, CT_RIFT_SEEKER}};
     for (int i = 0; i < BP_COUNT; i++) {
         CHECK_EQ(bps[i].bp, i);
         CHECK_EQ(BLUEPRINTS[i].rank, bps[i].rank);
@@ -2555,9 +2568,12 @@ static void test_rank_derivation(void) {
              {30, 3, 20, BP_WYRMCLEAVER},
              {31, 3, 19, BP_WYRMCLEAVER},
              {49, 3, 1, BP_WYRMCLEAVER},
-             {50, 4, -1, -1},
-             {51, 4, -1, -1},
-             {1000, 4, -1, -1},
+             {50, 4, 25, BP_ASTRAL_BLADE},
+             {51, 4, 24, BP_ASTRAL_BLADE},
+             {74, 4, 1, BP_ASTRAL_BLADE},
+             {75, 5, -1, -1},
+             {76, 5, -1, -1},
+             {1000, 5, -1, -1},
              {-1, 0, 5, BP_WARHAMMER},
              {-100, 0, 5, BP_WARHAMMER}};
     for (size_t i = 0; i < sizeof t / sizeof *t; i++) {
@@ -2569,9 +2585,11 @@ static void test_rank_derivation(void) {
     static const struct {
         int done;
         int bp[BP_COUNT];
-    } unl[] = {{0, {0, 0, 0, 0}},  {4, {0, 0, 0, 0}},  {5, {1, 0, 0, 0}},  {14, {1, 0, 0, 0}},
-               {15, {1, 1, 0, 0}}, {29, {1, 1, 0, 0}}, {30, {1, 1, 1, 0}}, {49, {1, 1, 1, 0}},
-               {50, {1, 1, 1, 1}}, {51, {1, 1, 1, 1}}, {99, {1, 1, 1, 1}}};
+    } unl[] = {{0, {0, 0, 0, 0, 0, 0, 0}},  {4, {0, 0, 0, 0, 0, 0, 0}},  {5, {1, 0, 0, 0, 0, 0, 0}},
+               {14, {1, 0, 0, 0, 0, 0, 0}}, {15, {1, 1, 0, 0, 0, 0, 0}},  {29, {1, 1, 0, 0, 0, 0, 0}},
+               {30, {1, 1, 1, 0, 0, 0, 0}}, {49, {1, 1, 1, 0, 0, 0, 0}},  {50, {1, 1, 1, 1, 0, 0, 0}},
+               {51, {1, 1, 1, 1, 0, 0, 0}}, {74, {1, 1, 1, 1, 0, 0, 0}},  {75, {1, 1, 1, 1, 1, 1, 1}},
+               {76, {1, 1, 1, 1, 1, 1, 1}}, {99, {1, 1, 1, 1, 1, 1, 1}}};
     for (size_t i = 0; i < sizeof unl / sizeof *unl; i++) {
         for (int b = 0; b < BP_COUNT; b++) {
             CHECK_EQ(blueprint_unlocked(unl[i].done, b), unl[i].bp[b]);
@@ -2623,12 +2641,12 @@ static void test_rank_derivation(void) {
     g.guild_expired = 500;
     CHECK_EQ(guild_rank(g.guild_done), 1);
 
-    /* ランクは実際の納品に従う: 5 / 15 / 30 / 50 回目の納品でちょうど変わる */
+    /* ランクは実際の納品に従う: 5 / 15 / 30 / 50 / 75 回目の納品でちょうど変わる */
     GameState p = fresh();
     p.money = 100000;
     p.status = ST_SANDBOX; /* サンドボックス: 日数の上限なし */
     int last = 0, ups = 0;
-    for (int n = 1; n <= 51; n++) {
+    for (int n = 1; n <= 76; n++) {
         put_contract(&p, CT_WARRIOR, 0, GD_EASY);
         CHECK_EQ(guild_accept(&p, 0), GUILD_OK);
         int it = give_item(&p, EQ_SWORD, MAT_IRON, MAT_IRON);
@@ -2638,10 +2656,10 @@ static void test_rank_derivation(void) {
         int r = guild_rank(p.guild_done);
         if (r != last) {
             ups++;
-            CHECK(n == 5 || n == 15 || n == 30 || n == 50);
+            CHECK(n == 5 || n == 15 || n == 30 || n == 50 || n == 75);
             last = r;
         }
-        CHECK_EQ(guild_rank(p.guild_done), n >= 50 ? 4 : n >= 30 ? 3 : n >= 15 ? 2 : n >= 5 ? 1 : 0);
+        CHECK_EQ(guild_rank(p.guild_done), n >= 75 ? 5 : n >= 50 ? 4 : n >= 30 ? 3 : n >= 15 ? 2 : n >= 5 ? 1 : 0);
         CHECK(game_validate(&p));
         p.mat_stock[MAT_IRON] =
             0; /* give_item は毎回素材を足す: 50 件の納品でも stock_cap を超えないよう空にしておく */
@@ -2651,8 +2669,8 @@ static void test_rank_derivation(void) {
         day_advance(&p); /* 毎回新しい日: スロット、掲示板、ランクはそれをまたいで残る */
         CHECK_EQ(guild_rank(p.guild_done), last);
     }
-    CHECK_EQ(ups, 4);
-    CHECK_EQ(guild_rank(p.guild_done), RANK_MYTHIC); /* 51 件を超えても最高ランクのまま */
+    CHECK_EQ(ups, 5);
+    CHECK_EQ(guild_rank(p.guild_done), RANK_ASCENDANT); /* 76 件でも最高ランクのまま */
     CHECK_EQ(guild_next_rank_remaining(p.guild_done), -1);
     CHECK_EQ(guild_next_blueprint(p.guild_done), -1);
 }
@@ -3222,7 +3240,7 @@ static void test_rank_guild(void) {
     CHECK(!game_validate(&z));
     for (int d = 0; d < GD_COUNT; d++) { /* すべての新しい客について、鍛冶場 Lv0 ですべての難易度が納品可能 */
         for (int ct = CT_KNIGHT; ct < CUST_TYPE_COUNT; ct++) {
-            GameState y = at_done(50); /* Wyrm Hunter まで解放済み */
+            GameState y = at_done(75); /* Rift Seeker まで解放済み */
             put_contract(&y, ct, GUILD_DIFFS[d].min_fit, d);
             CHECK_EQ(guild_accept(&y, 0), GUILD_OK);
             int bm = -1, bs = -1;
@@ -3244,7 +3262,7 @@ static void test_rank_guild(void) {
             int item = give_item(&y, CUSTOMER_DEFS[ct].wants_eq, bm, bs);
             CHECK_EQ(guild_deliver(&y, 0, item, &o), GUILD_OK);
             CHECK_EQ(o.gold, GUILD_DIFFS[d].gold);
-            CHECK_EQ(y.guild_done, 51);
+            CHECK_EQ(y.guild_done, 76);
             CHECK(game_validate(&y));
         }
     }
@@ -3335,7 +3353,7 @@ static void test_rank_save(void) {
     char *t = save_text(&g);
     CHECK(!strncmp(t, "LOOTSMITH_SAVE 4\n", 17));
     CHECK_EQ(SAVE_VERSION, 4);
-    CHECK(strstr(t, "\ncounts 8 10 11 3\n") != NULL);
+    CHECK(strstr(t, "\ncounts 12 13 14 3\n") != NULL);
     CHECK(strstr(t, "rank") == NULL && strstr(t, "blueprint") == NULL &&
           strstr(t, "unlock") == NULL); /* 何も二重には保存されない */
     GameState r;
@@ -3539,7 +3557,7 @@ static void test_rank_save(void) {
     /* このビルドより多くのコンテンツを知っているセーブは、より新しいゲームのもの */
     {
         char *ts = save_text(&src);
-        char *nw = replace_line(ts, "counts ", "counts 7 11 11 3");
+        char *nw = replace_line(ts, "counts ", "counts 7 14 14 3");
         CHECK_EQ(load_text(&probe, nw), SAVE_ERR_VERSION);
         CHECK(same_state(&probe, &keep));
         free(ts);
@@ -3547,7 +3565,7 @@ static void test_rank_save(void) {
     }
     {
         char *ts = save_text(&src);
-        char *nw = replace_line(ts, "counts ", "counts 7 10 12 3");
+        char *nw = replace_line(ts, "counts ", "counts 7 13 15 3");
         CHECK_EQ(load_text(&probe, nw), SAVE_ERR_VERSION);
         free(ts);
         free(nw);
@@ -3902,7 +3920,7 @@ static void test_quality_tables(void) {
     }
     /* ギルドランクごとの基本確率は仕様どおり */
     static const int odds[RANK_COUNT][QUALITY_COUNT] = {
-        {70, 25, 5, 0}, {55, 32, 12, 1}, {40, 35, 20, 5}, {25, 35, 28, 12}, {20, 33, 30, 17}};
+        {70, 25, 5, 0}, {55, 32, 12, 1}, {40, 35, 20, 5}, {25, 35, 28, 12}, {20, 33, 30, 17}, {15, 30, 35, 20}};
     for (int r = 0; r < RANK_COUNT; r++) {
         int sum = 0;
         for (int i = 0; i < QUALITY_COUNT; i++) {
@@ -3967,7 +3985,7 @@ static void test_quality_rates(void) {
     quality_rates(RANK_APPRENTICE, 0, b);
     CHECK(!memcmp(a, b, sizeof a));
     quality_rates(99, 99, a); /* 範囲外のランクは最高ランクに丸められる */
-    quality_rates(RANK_MYTHIC, UPGRADES[UP_FORGE].max_level, b);
+    quality_rates(RANK_ASCENDANT, UPGRADES[UP_FORGE].max_level, b);
     CHECK(!memcmp(a, b, sizeof a));
 }
 
@@ -4349,7 +4367,8 @@ static void test_rng_streams(void) {
     GameState g = fresh();
     CHECK_EQ((long long)g.rng, 4285686168LL);
     CHECK_EQ((long long)g.guild_rng, 696431670LL);
-    static const int prices0[MAT_COUNT] = {10, 6, 18, 8, 13, 12, 14, 30}; /* Dragon Scale は基準価格のまま動かない */
+    /* 従来の 7 素材の価格は新素材の追加前と同一 (rng を消費しない)。Dragon Scale / Astral Shard は基準価格のまま動かない */
+    static const int prices0[MAT_COUNT] = {10, 6, 18, 8, 13, 12, 14, 30, 31, 23, 13, 40};
     for (int m = 0; m < MAT_COUNT; m++) {
         CHECK_EQ(g.price[m], prices0[m]);
     }
@@ -4366,7 +4385,7 @@ static void test_rng_streams(void) {
     CHECK_EQ((long long)g.rng, 1618237454LL);
     CHECK_EQ((long long)g.guild_rng, 2146800925LL);
     CHECK_EQ(g.day, 5);
-    static const int prices4[MAT_COUNT] = {9, 6, 20, 7, 12, 14, 13, 30};
+    static const int prices4[MAT_COUNT] = {9, 6, 20, 7, 12, 14, 13, 30, 24, 24, 12, 40};
     for (int m = 0; m < MAT_COUNT; m++) {
         CHECK_EQ(g.price[m], prices4[m]);
     }
@@ -6142,9 +6161,11 @@ static void test_mythic_smith(void) {
     } t[] = {{29, RANK_MASTER, 1, BP_CRYSTAL_ORB, 0},
              {30, RANK_GRANDMASTER, 20, BP_WYRMCLEAVER, 0},
              {49, RANK_GRANDMASTER, 1, BP_WYRMCLEAVER, 0},
-             {50, RANK_MYTHIC, -1, -1, 1},
-             {51, RANK_MYTHIC, -1, -1, 1},
-             {5000, RANK_MYTHIC, -1, -1, 1}};
+             {50, RANK_MYTHIC, 25, BP_ASTRAL_BLADE, 1}, /* Mythic Smith は最高ランクではなくなった: 次は 75 件 */
+             {51, RANK_MYTHIC, 24, BP_ASTRAL_BLADE, 1},
+             {74, RANK_MYTHIC, 1, BP_ASTRAL_BLADE, 1},
+             {75, RANK_ASCENDANT, -1, -1, 1},
+             {5000, RANK_ASCENDANT, -1, -1, 1}};
     for (size_t i = 0; i < sizeof t / sizeof *t; i++) {
         CHECK_EQ(guild_rank(t[i].done), t[i].rank);
         CHECK_EQ(guild_next_rank_remaining(t[i].done), t[i].remaining); /* 最高ランクでは -1 (残り件数を出さない) */
@@ -6453,8 +6474,8 @@ static void test_mythic_smith(void) {
         CHECK_EQ(load_text(&probe, bad), SAVE_ERR_VALUE);
         CHECK(same_state(&probe, &keep));
         free(bad);
-        /* 50 件を大きく超えるセーブ (納品 120) も、ランクと解放が導かれる */
-        x.guild_done = 120;
+        /* 50 件を超えて Ascendant Smith 未満のセーブ (納品 74) も、ランクと解放が導かれる */
+        x.guild_done = 74;
         x.guild_active_count = 0;
         memset(x.guild_active, 0, sizeof x.guild_active);
         char *hi = save_text(&x);
@@ -7020,7 +7041,8 @@ static void test_dragon_market(void) {
         CHECK_EQ(g.swing_pm[MAT_DRAGON_SCALE], 0);
         CHECK_EQ(g.mat_stock[MAT_DRAGON_SCALE], 0);
     }
-    /* 市場更新: 買える素材の数だけ (7 回) 乱数を引く。買えない素材のために引かない */
+    /* 市場更新: 導入済みの買える素材 (MARKET_RNG_MATS 未満、7 つ) の数だけ乱数を引く。買えない素材のために引かない。
+     * それ以降に追加された買える素材 (Mithril / Moonstone / Emberglass) は乱数を引かず、変動幅は範囲内に収まる */
     for (uint32_t s = 1; s <= 50; s++) {
         GameState x = fresh();
         x.rng = s;
@@ -7033,13 +7055,18 @@ static void test_dragon_market(void) {
             if (MATERIALS[m].hunt_only) {
                 continue;
             }
+            if (m >= MARKET_RNG_MATS) {
+                CHECK(x.swing_pm[m] >= -BAL.market_swing_pm && x.swing_pm[m] <= BAL.market_swing_pm);
+                CHECK(x.price[m] >= MATERIALS[m].min_price);
+                continue;
+            }
             n++;
             int w =
                 sw[m] * BAL.market_persist_pct / 100 + rng_range(&expect, -BAL.market_noise_pm, BAL.market_noise_pm);
             w = w < -BAL.market_swing_pm ? -BAL.market_swing_pm : w > BAL.market_swing_pm ? BAL.market_swing_pm : w;
             CHECK_EQ(x.swing_pm[m], w);
         }
-        CHECK_EQ(n, MAT_COUNT - 1);
+        CHECK_EQ(n, MARKET_RNG_MATS - 1);
         CHECK(x.rng == expect);
     }
     /* 同じシードなら、新素材の追加前と同じ価格推移 (固定値は test_rng_streams も検査する) */
@@ -7239,7 +7266,7 @@ static void test_dragon_rarity(void) {
     puts("dragon_rarity");
     /* 希少度ボーナスは素材テーブルの値: 従来の素材はすべて 0 (価値の式は従来のまま)、Dragon Scale だけが持つ */
     for (int m = 0; m < MAT_COUNT; m++) {
-        CHECK_EQ(MATERIALS[m].rarity_value, m == MAT_DRAGON_SCALE ? 18 : 0);
+        CHECK_EQ(MATERIALS[m].rarity_value, m == MAT_DRAGON_SCALE ? 18 : m == MAT_ASTRAL_SHARD ? 25 : 0);
     }
     {
         MaterialDef mt[MAT_COUNT];
@@ -7362,6 +7389,14 @@ static char *gb_line(char *buf, size_t n, const char *key, int id, int ct, int f
     snprintf(buf, n, "%s %d %d %d %d %d %d %d %d %d %d %d", key, id, ct, fit, diff, gold, rep, days, dl, kind, rm, rq);
     return buf;
 }
+/* 旧ビルドは素材 7 (Dragon Scale) 以降を書かないので、読み込んだ状態ではそれらの価格・変動が既定値になる。比較用に、
+ * 元の状態も同じ「旧ビルドが知っていた状態」にそろえる (Dragon Scale は元々不変なので、実際に変わるのは新素材だけ) */
+static void forget_new_mats(GameState *g) {
+    for (int m = 7; m < MAT_COUNT; m++) {
+        g->price[m] = g->prev_price[m] = MATERIALS[m].base_price;
+        g->swing_pm[m] = 0;
+    }
+}
 static char *as_v3_build(const char *t4) { /* v4 の本文から、v3 のビルドが書いたはずの本文を作る */
     size_t len = strlen(t4);
     char *out = malloc(len + 16), *w = out;
@@ -7376,9 +7411,9 @@ static char *as_v3_build(const char *t4) { /* v4 の本文から、v3 のビル�
             strcpy(line, "LOOTSMITH_SAVE 3");
         } else if (!strncmp(line, "counts ", 7)) {
             strcpy(line, "counts 7 10 11 3");
-        } else if (!strncmp(line, "mat 7 ", 6)) {
+        } else if (!strncmp(line, "mat ", 4) && atoi(line + 4) >= 7) {
             p += n + 1;
-            continue; /* v3 のビルドに Dragon Scale はなかった */
+            continue; /* v3 のビルドに Dragon Scale (7) 以降の素材はなかった */
         } else if (!strncmp(line, "gb ", 3) || !strncmp(line, "ga ", 3)) {
             for (int k = 0; k < 3; k++) { /* 末尾の <kind> <reward_mat> <reward_qty> を落とす */
                 char *sp = strrchr(line, ' ');
@@ -7527,6 +7562,7 @@ static void test_dragon_save(void) {
         s.guild_board_count = 1;
         memset(&s.guild_board[1], 0, 2 * sizeof s.guild_board[1]); /* 掲示板の残りの枠を空に (読み込み後と同じ) */
         CHECK(game_validate(&s));
+        forget_new_mats(&s);
         char *t4 = save_text(&s);
         char *t3 = as_v3_build(t4);
         CHECK(!strncmp(t3, "LOOTSMITH_SAVE 3\n", 17));
@@ -7554,6 +7590,7 @@ static void test_dragon_save(void) {
     {
         GameState s = at_done(20);
         guild_accept(&s, 0);
+        forget_new_mats(&s);
         char *t4 = save_text(&s);
         char *t3 = as_v3_build(t4);
         free(t4);
@@ -7577,6 +7614,7 @@ static void test_dragon_save(void) {
     {
         GameState s = at_done(50);
         put_contract(&s, CT_WYRM_HUNTER, 50, GD_STANDARD);
+        forget_new_mats(&s);
         char *t4 = save_text(&s);
         char *t3 = as_v3_build(t4);
         char *forged = replace_line(t3, "gb ", "gb 4 10 50 1 55 2 3 0 1 7 1"); /* v3 では末尾の 3 値は無視される */
@@ -8180,6 +8218,7 @@ static void test_dragon_trait_save(void) {
     {
         GameState s = at_done(30);
         put_built(&s, EQ_SWORD, MAT_IRON, MAT_IRON, QUALITY_LEGENDARY, EQ_TRAIT_LIGHTWEIGHT);
+        forget_new_mats(&s);
         char *t4 = save_text(&s);
         char *t3 = as_v3_build(t4);
         GameState l;

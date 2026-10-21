@@ -53,6 +53,13 @@ const char *trend_txt(int now, int prev);
 Color trend_col(int now, int base);
 int market_mat_count(void); /* 市場に並ぶ素材の数 (hunt_only を除く) */
 int market_mat_at(int i);   /* i 番目の市場素材の ID。範囲外なら -1 */
+/* 特別契約 (Dragon Hunt / Relic Expedition) の表示。種別は GuildContract.kind。通常契約は NULL / 通常色 */
+const char *special_tag(int kind);
+Color special_color(int kind);
+Color special_bg(int kind);
+/* 日替わりイベントの表示。判定は core の day_event() だけ (UI に日付の判定を持たない) */
+Color event_color(int event);
+const char *event_headline(int day); /* "MARKET CARAVAN: Materials 15% off ..."。イベントがない日は空文字列 */
 
 /* ---- ui_widgets.c ---- */
 bool btn(App *a, int x, int y, int w, int h, const char *label, int flags, int key);

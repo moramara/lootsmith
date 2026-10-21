@@ -11,7 +11,7 @@ CFLAGS  ?= -std=c11 -Wall -Wextra -O2
 # ソース一覧。ディレクトリごとの責務は docs/DEVELOPMENT.md を参照。
 # core: ゲームロジック (raylib 不要)
 CORE_SRC = $(addprefix src/core/, content_tables.c content_validate.c rng.c game_state.c upgrades.c market.c \
-           crafting.c inventory.c customers.c day_flow.c guild_rank.c guild.c save.c icons.c)
+           crafting.c inventory.c customers.c day_flow.c events.c guild_rank.c guild.c save.c icons.c)
 # audio の純 C 部分 (音量設定・効果音 ID・アセット探索): raylib なしでテストできる
 AUDIO_C  = $(addprefix src/audio/, settings.c sfx.c asset_path.c)
 BOT_SRC  = src/bot/bot.c
@@ -53,14 +53,18 @@ lootsmith: $(LOGIC) $(BOT_SRC) $(AUDIO_C) $(UI) $(HEADERS)
 tests/test_sim: tests/test_sim.c $(LOGIC) $(HEADERS)
 	$(CC) $(CFLAGS) $(INCLUDES) -g -fsanitize=address,undefined $< $(LOGIC) -o $@ -lm
 
+tests/test_ascendant: tests/test_ascendant.c $(LOGIC) $(HEADERS)
+	$(CC) $(CFLAGS) $(INCLUDES) -g -fsanitize=address,undefined $< $(LOGIC) -o $@ -lm
+
 tests/test_audio: tests/test_audio.c $(AUDIO_C) $(HEADERS)
 	$(CC) $(CFLAGS) $(INCLUDES) -g -fsanitize=address,undefined -DLOOTSMITH_ASSET_DIR=\"assets\" $< $(AUDIO_C) -o $@ -lm
 
 tests/test_bot: tests/test_bot.c $(BOT_SRC) $(LOGIC) $(HEADERS)
 	$(CC) $(CFLAGS) $(INCLUDES) -g -fsanitize=address,undefined $< $(BOT_SRC) $(LOGIC) -o $@ -lm
 
-test: tests/test_sim tests/test_audio tests/test_bot
+test: tests/test_sim tests/test_ascendant tests/test_audio tests/test_bot
 	./tests/test_sim
+	./tests/test_ascendant
 	./tests/test_audio
 	./tests/test_bot
 

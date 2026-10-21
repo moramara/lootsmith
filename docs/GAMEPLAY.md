@@ -19,10 +19,11 @@
 
 ## コンテンツ
 
-- 素材: Iron、Wood、Mana、Copper、Steel、Silver、Obsidian (市場で買える 7 種)、Dragon Scale (市場では買えない希少素材。下の「Dragon Hunt」)
-- 装備: Sword、Shield、Staff、Dagger、Spear、Grimoire (さらにギルドの設計図で Warhammer、Rune Bow、Crystal Orb、Wyrmcleaver)
+- 素材: Iron、Wood、Mana、Copper、Steel、Silver、Obsidian (市場で買える 7 種)、Mithril、Moonstone、Emberglass (市場で買える高級素材 3 種。下の「The Ascendant Era」)、
+  Dragon Scale・Astral Shard (市場では買えない希少素材。下の「Dragon Hunt」「The Ascendant Era」)
+- 装備: Sword、Shield、Staff、Dagger、Spear、Grimoire (さらにギルドの設計図で Warhammer、Rune Bow、Crystal Orb、Wyrmcleaver、Astral Blade、Aegis of Dawn、Void Codex)
 - 客: Warrior (Sword)、Guardian (Shield)、Mage (Staff)、Thief (Sword)、Scout (Dagger)、Lancer (Spear)、Scholar (Grimoire)
-  (設計図の装備を求める Knight、Ranger、Arcanist、Wyrm Hunter は、その設計図が解放されると現れる)
+  (設計図の装備を求める Knight、Ranger、Arcanist、Wyrm Hunter、Duelist (Astral Blade)、Sentinel (Aegis of Dawn)、Rift Seeker (Void Codex) は、その設計図が解放されると現れる)
 - アップグレード: Forge (鍛冶場)、Shop (店)、Supplier (仕入れ先)
 
 客の種類は一様に抽選されるので、ある装備を一切作らない戦略は、その装備を求める客に対応できません。
@@ -54,7 +55,8 @@ ATK / DEF / MAG / DUR は `最終値 = round(Forge 適用後の基本値 * 倍�
 | Lightweight | WT -1 | WT -2 (WT は 1 未満にならない) |
 
 **確率** (パーセント、Common / Fine / Masterwork / Legendary) はギルドランクで決まります:
-Apprentice 70/25/5/0、Journeyman 55/32/12/1、Master Craftsman 40/35/20/5、Grandmaster 25/35/28/12、Mythic Smith 20/33/30/17。
+Apprentice 70/25/5/0、Journeyman 55/32/12/1、Master Craftsman 40/35/20/5、Grandmaster 25/35/28/12、Mythic Smith 20/33/30/17、
+Ascendant Smith 15/30/35/20。日替わりイベント Arcane Convergence の日は、ランクの確率に補正を加えてから Forge を適用する (下の「日替わりイベント」)。
 Forge の 1 レベルごとに 5 ポイントが Common から Fine へ移ります (Common の残りを超えては移らない)。
 たとえば Apprentice + Forge 2 は 60/35/5/0 です。Apprentice は Legendary を引けません。
 
@@ -127,7 +129,7 @@ Mythic Smith (`guild_done >= 50`) に到達した後も契約を続ける動機�
 | 最低 FIT | 70 (通常の `equip_fit()` で判定する。専用の計算式はない) |
 | 難易度 / 期限 | Hard / 3 日 (受注した日を数える。通常契約と同じ) |
 | 報酬 | 170 ゴールド + 評判 4 + **Dragon Scale ×1** |
-| 出現 | `guild_done >= 50` のときだけ、掲示板の更新ごとに 25% で **最大 1 件** |
+| 出現 | `guild_done >= 50` のときだけ、掲示板の更新ごとに 25% で **最大 1 件** (75 件以上では Relic Expedition と 1 回のロールを共有する。下の「The Ascendant Era」) |
 
 - **掲示板**: Dragon Hunt が出ると、通常契約が 1 件減るので総数は常に 3 件。通常契約の依頼主は Dragon Hunt の依頼主 (Wyrm Hunter)
   と重ならない。出なかった日は従来どおり通常契約が 3 件 (Wyrm Hunter の通常契約も従来どおり出うる)。同時受注数 (2 件) も従来どおり。
@@ -149,6 +151,68 @@ Mythic Smith (`guild_done >= 50`) に到達した後も契約を続ける動機�
   Forge 0 の Wyrmcleaver (品質 Common) の価値は、Steel+Steel が 77、Scale+Scale が 106 (推奨価格 93 → 128)、
   Scale+Iron が 95、Iron+Scale が 81 (FIT は Steel+Steel 81、Scale+Scale 73)。
 
+## The Ascendant Era (Ascendant Smith 以降のエンドゲーム)
+
+Ascendant Smith (`guild_done >= 75`) は最高ランクです。ランク・設計図・解放は従来どおり `guild_done` から導出され、新しい保存フィールドはありません。
+
+### 新素材
+
+| 素材 | ATK / DEF / MAG / DUR / WT | 基準 / 最低価格 | 入手 | 位置づけ |
+|---|---|---:|---|---|
+| Mithril | 11 / 8 / 2 / 9 / 4 | 28 / 20 | 市場 | Steel と Silver の中間にあたるバランス型の高級素材 |
+| Moonstone | 2 / 3 / 11 / 4 / 1 | 24 / 17 | 市場 | 魔力と軽さ。Staff・Grimoire・Void Codex 向き |
+| Emberglass | 10 / 2 / 1 / 4 / 3 | **12** / 8 | 市場 | 安価で、Obsidian より頑丈で軽いが ATK は低い |
+| Astral Shard | 5 / 3 / 12 / 4 / 1 | 40 / 30 | **Relic Expedition の報酬のみ** (`hunt_only`、`rarity_value` 25) | 希少な魔力素材 |
+
+- **Emberglass の価格は仕様の 22 から 12 へ調整した** (能力値は仕様どおり)。22 では、より安い Obsidian (13) に ATK で劣る上に高価で、
+  どのレシピでも選ぶ理由がなくなるため。調整後は、安価で頑丈・軽い代わりに ATK が低い素材として別の役割を持つ。
+- Mithril / Moonstone / Emberglass は通常の市場素材で、混合・Forge・品質・特性・価値の計算に例外はない。
+- Astral Shard は Dragon Scale と同じ扱い: 市場に `HUNT ONLY`、購入は `R_ERR_NOT_FOR_SALE` で何も変わらない、価格は動かず乱数も引かない、
+  報酬は原価 0、主 (×2)・副 (×1) のどちらにも使える。希少度 `rarity_value` 25 は使った 3 個分が価値に直接加わる
+  (例: Astral Shard のみで作る装備は +75、主素材だけなら +50、副素材だけなら +25)。専用のクラフト処理はない。
+
+### Relic Expedition (特別契約)
+
+| 項目 | 値 |
+|---|---|
+| 依頼主 / 必要装備 | Rift Seeker / Void Codex |
+| 最低 FIT | 72 (通常の `equip_fit()` で判定する。専用の計算式はない) |
+| 難易度 / 期限 | Hard / 3 日 (受注した日を数える) |
+| 報酬 | 260 ゴールド + 評判 5 + **Astral Shard ×2** |
+| 出現 | `guild_done >= 75`、掲示板の更新ごとに 20% |
+
+- **特別契約の抽選規約**: 掲示板の更新ごとに、対象のとき (`guild_done >= 50`) だけ `guild_rng` から **ロール 0..99 を 1 回** 引く。
+  `guild_done < 75`: ロール < 25 なら Dragon Hunt (従来どおり。Relic Expedition は決して出ず、そのための乱数も引かない)。
+  `guild_done >= 75`: **0〜19 が Relic Expedition (20%)、20〜44 が Dragon Hunt (25%)、45〜99 は特別契約なし**。
+  したがって 75 件以上でも Dragon Hunt は 25% のまま。特別契約は 1 回の更新で最大 1 件で、出ると通常契約が 1 件減り、総数は常に 3 件。
+  同時受注数 (最大 2) も変わらない。特別契約の依頼主と同じ客の通常契約は、同じ掲示板に出ない。
+- 納品・失効・報酬の扱いは Dragon Hunt と同じ: 報酬の素材は納品の成功時にだけ付く。Astral Shard の在庫が上限 (99) に近く 2 個を受け取れないとき
+  (98 個以上) は、納品は拒否され (`GUILD_ERR_REWARD_FULL`)、装備・ゴールド・評判・契約・納品件数は何も変わらない。
+- 画面: 掲示板は水色の札 `RELIC EXPEDITION` (Dragon Hunt はオレンジ) で通常契約と区別され、Void Codex・最低 FIT・`+2 Astral Shard` が見える。
+
+## 日替わりイベント
+
+日付だけから決まる (`phase = (day - 1) % 7`)。**保存せず、乱数も使わない** (`day_event(day)` は純粋関数)。イベントのない日は従来どおり。
+
+| phase | 日 | イベント | 効果 |
+|---:|---|---|---|
+| 1 | 2, 9, 16, 23, 30 | Market Caravan | 市場で買える素材の購入価格が追加で 15% 割引 |
+| 3 | 4, 11, 18, 25 | Arcane Convergence | クラフト品質の確率が上がる |
+| 5 | 6, 13, 20, 27 | Guild Assembly | その日に納品した契約のゴールド報酬が 10% 増える |
+| 0, 2, 4, 6 | 1, 3, 5, 7, ... | (なし) | 通常どおり |
+
+- **Market Caravan**: 最終価格 = 市場の価格 × (100 − Supplier%) × (100 − 15) を 10000 で割って **1 回だけ四捨五入** (整数)。1 個あたり最低 1 ゴールド。
+  Supplier の割引と併用できる。表示 (`Final: N each`)、見積もり (`market_quote`)、購入は同じ式なので一致する。市場の価格・変動の履歴は変わらない。
+  `hunt_only` の素材は対象外。
+- **Arcane Convergence**: ランクの基本確率から Common を 7 ポイント移し、Masterwork に +5、Legendary に +2 してから、通常の Forge の補正を適用する
+  (Common の残りを超えては移らない)。合計は常に 100、どの確率も負にならない。品質の乱数は通常どおり 1 回だけ引く (イベントは確率だけを変える)。
+  例: Apprentice 70/25/5/0 → 63/25/10/2、Ascendant Smith 15/30/35/20 → 8/30/40/22。
+- **Guild Assembly**: 判定は **納品した日**。通常契約・Dragon Hunt・Relic Expedition のゴールド報酬に `round(gold × 10%)` (0.5 は切り上げ) を加える
+  (例: 35 → +4、260 → +26)。評判と素材の報酬は増えない。日報 (`guild_gold`)・純利益・所持金・納品結果 (`GuildOutcome.bonus_gold`) に反映される。
+- 画面: ホームのパネルに `EVENT: <名前>` (ない日は `No event`)、下部のバーに効果。市場は `Supplier x% + CARAVAN y%` と各素材の `Final`、
+  クラフトは今日の品質確率 (Arcane の日は補正の説明つき)、ギルドは `GUILD ASSEMBLY: +10% GOLD TODAY` と補正後の報酬、日報は今日 / 明日のイベント。
+  ヘルプ (F1) に周期と効果が載る。
+
 ## ギルドランクと設計図
 
 ランクは **納品済み契約数** (`guild_done`。失効したものは数えない) から導出されます。保存はされないので、納品数と食い違うことはなく、
@@ -160,7 +224,8 @@ Mythic Smith (`guild_done >= 50`) に到達した後も契約を続ける動機�
 | Journeyman | 5 | Warhammer Plans → **Warhammer**、客 **Knight** |
 | Master Craftsman | 15 | Rune Bow Plans → **Rune Bow**、客 **Ranger** |
 | Grandmaster | 30 | Crystal Orb Plans → **Crystal Orb**、客 **Arcanist** |
-| Mythic Smith | 50 | Wyrmcleaver Plans → **Wyrmcleaver**、客 **Wyrm Hunter**。クラフト品質の確率も向上する (最高ランク) |
+| Mythic Smith | 50 | Wyrmcleaver Plans → **Wyrmcleaver**、客 **Wyrm Hunter**。クラフト品質の確率も向上する |
+| Ascendant Smith | 75 | Astral Blade Plans → **Astral Blade**、客 **Duelist** / Aegis of Dawn Plans → **Aegis of Dawn**、客 **Sentinel** / Void Codex Plans → **Void Codex**、客 **Rift Seeker**。品質の確率が最も高い (最高ランク)。特別契約 Relic Expedition が出る |
 
 - 未解放の装備はクラフトできない (UI では `LOCKED` と表示され、CRAFT は無効になる)。設計図が解放するのは装備の種類だけで、
   クラフトのルール (主 2 + 副 1)、能力値、Forge、価格の式は通常どおり。
@@ -179,6 +244,11 @@ Mythic Smith (`guild_done >= 50`) に到達した後も契約を続ける動機�
 | Rune Bow | 10 | 1 | 3 | 5 | 3 | Ranger | 80-155 | 40-65 | ATK 50, 軽さ 50 |
 | Crystal Orb | 0 | 2 | 14 | 4 | 2 | Arcanist | 100-200 | 40-70 | MAG 70, DUR 30 |
 | Wyrmcleaver | 14 | 2 | 1 | 9 | 5 | Wyrm Hunter | 120-210 | 50-75 | ATK 45, DUR 35, 軽さ 20 |
+| Astral Blade | 15 | 2 | 4 | 9 | 3 | Duelist | 150-250 | 58-82 | ATK 50, MAG 10, DUR 20, 軽さ 20 |
+| Aegis of Dawn | 2 | 15 | 2 | 13 | 7 | Sentinel | 145-235 | 60-82 | ATK 5, DEF 55, DUR 35, 軽さ 5 |
+| Void Codex | 1 | 3 | 16 | 5 | 2 | Rift Seeker | 165-270 | 62-84 | DEF 5, MAG 70, DUR 20, 軽さ 5 |
+
+Ascendant Smith の設計図は 3 つ同時に解放される (74 件までは 3 つともロック、75 件で解放)。次の設計図の表示は、同じランクで解放される数を `+2 PLANS` のように示す。
 
 ## オプション画面と効果音
 

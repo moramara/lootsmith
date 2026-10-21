@@ -295,15 +295,51 @@ static void demo_quality(GameState *g, int idx, int q, int trait) {
     e->price = e->rec_price;
 }
 
+/* demo = 画面 + 100 * シナリオ。シナリオ 1..4 は Ascendant Smith (納品 75 件) の状態で、日付がイベントの日になる:
+ * 1 = Market Caravan (2 日目)、2 = Arcane Convergence (4 日目)、3 = Guild Assembly (6 日目)、4 = イベントなし (1 日目)
+ */
 void app_demo(App *a, int screen) {
     GameState *g = &a->gs;
+    int scen = screen / 100;
+    screen %= 100;
+    static const int scen_day[5] = {7, 2, 4, 6, 1};
+    if (scen < 0 || scen > 4) {
+        scen = 0;
+    }
     game_init(g, 4242);
-    g->money = 800;
+    g->money = scen ? 3000 : 800;
     g->rep = 45;
-    g->day = 7;
-    g->guild_done = 20; /* 熟練の職人 (Master Craftsman): Warhammer と Rune Bow は解放済み、Crystal Orb はまだ未解放 */
+    g->day = scen_day[scen];
+    g->guild_done =
+        scen ? 75 : 20; /* 熟練の職人 (Master Craftsman): Warhammer と Rune Bow は解放済み、Crystal Orb はまだ未解放 */
     guild_refresh_board(g); /* game_init() は 1 日目 / 見習い (Apprentice) の掲示板を出した: 7
                              * 日目とこのランクで出し直す (guild_rng のみ使用。GameState.rng には触れない) */
+    if (scen) { /* 掲示板に Relic Expedition を 1 件だけ載せる (特別契約は最大 1 件、依頼主は重ならない) */
+        for (uint32_t k = 1; k < 200; k++) {
+            g->guild_rng = k;
+            guild_refresh_board(g);
+            int specials = 0, clash = 0;
+            for (int i = 0; i < g->guild_board_count; i++) {
+                specials += g->guild_board[i].kind != GUILD_CONTRACT_STANDARD;
+                clash += i > 0 && g->guild_board[i].customer_type == GUILD_RELIC_EXPEDITION.customer;
+            }
+            if (specials == 0 && !clash) {
+                break;
+            }
+        }
+        const SpecialContractDef *rd = &GUILD_RELIC_EXPEDITION;
+        g->guild_board[0] = (GuildContract){g->guild_board[0].id,
+                                            rd->customer,
+                                            rd->min_fit,
+                                            rd->difficulty,
+                                            rd->gold,
+                                            rd->rep,
+                                            rd->days,
+                                            0,
+                                            GUILD_CONTRACT_RELIC_EXPEDITION,
+                                            rd->reward_mat,
+                                            rd->reward_qty};
+    }
     market_buy(g, MAT_IRON, 12);
     market_buy(g, MAT_WOOD, 6);
     market_buy(g, MAT_MANA, 6);
@@ -315,11 +351,20 @@ void app_demo(App *a, int screen) {
         market_buy(g, m, 6); /* 後半のコンテンツも見せる */
     }
     g->mat_stock[MAT_DRAGON_SCALE] = 2; /* Dragon Hunt の報酬 (無料: 原価 0) を持っている状態を見せる */
+    if (scen) {
+        g->mat_stock[MAT_ASTRAL_SHARD] = 4; /* Relic Expedition の報酬を持っている状態 */
+        market_buy(g, MAT_MOONSTONE, 3);
+        market_buy(g, MAT_MITHRIL, 3);
+    }
     craft_equipment(g, EQ_DAGGER, MAT_COPPER, MAT_WOOD, NULL);
     craft_equipment(g, EQ_SPEAR, MAT_STEEL, MAT_IRON, NULL);
     craft_equipment(g, EQ_GRIMOIRE, MAT_SILVER, MAT_OBSIDIAN, NULL);
     craft_equipment(g, EQ_WARHAMMER, MAT_IRON, MAT_STEEL, NULL);
     craft_equipment(g, EQ_RUNE_BOW, MAT_OBSIDIAN, MAT_COPPER, NULL);
+    if (scen) { /* 新装備: 末尾 (添字 9, 10) に置く。下の品質の上書きは先頭 9 つだけ */
+        craft_equipment(g, EQ_VOID_CODEX, MAT_ASTRAL_SHARD, MAT_MOONSTONE, NULL);
+        craft_equipment(g, EQ_ASTRAL_BLADE, MAT_MITHRIL, MAT_STEEL, NULL);
+    }
     { /* さまざまな品質と特性 (添字は上のクラフト順に対応する) */
         static const int q[9] = {QUALITY_COMMON,    QUALITY_FINE,       QUALITY_MASTERWORK,
                                  QUALITY_LEGENDARY, QUALITY_MASTERWORK, QUALITY_LEGENDARY,
@@ -335,9 +380,21 @@ void app_demo(App *a, int screen) {
     g->price[MAT_WOOD] = 5;
     g->prev_price[MAT_WOOD] = 6;
     reset_view(a);
+    if (scen) {
+        a->mk_scroll = scen == 3 ? 9 : 8; /* 新素材の行を見せる (reset_view の後) */
+        a->mk_row = a->mk_scroll;
+        a->help_scroll = scen * 28; /* ヘルプの後半 (新コンテンツの節) を見せる: 28 行ずつ */
+        a->pg_bp = 1;               /* 設計図の 2 ページ目 (Ascendant Smith の 3 つ) */
+    }
     a->cr_eq = EQ_GRIMOIRE;
     a->cr_main = MAT_OBSIDIAN;
     a->cr_sub = MAT_SILVER;
+    if (scen) {
+        a->cr_eq = EQ_VOID_CODEX;
+        a->cr_main = MAT_ASTRAL_SHARD;
+        a->cr_sub = MAT_MOONSTONE;
+        g->mat_stock[MAT_ASTRAL_SHARD] += 2;
+    }
     if (g->inv_count > 8) {
         a->last_craft = g->inv[8];
         a->has_last_craft = true;
@@ -379,7 +436,9 @@ void app_demo(App *a, int screen) {
     if (screen == SCR_GUILD) { /* 契約を 2 件受注し、最初の契約に納品できるアイテムを 1 つ持たせる */
         guild_accept(g, 0);
         guild_accept(g, 0);
-        g->guild_active[0].min_fit = 20;
+        if (!scen) {
+            g->guild_active[0].min_fit = 20;
+        }
         a->gl_sel = 0;
     }
     a->last_money = g->money;

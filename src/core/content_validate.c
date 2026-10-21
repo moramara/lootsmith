@@ -20,6 +20,10 @@ static int name_ok(const char *s) {
     return s && s[0] && strlen(s) <= NAME_MAX_LEN;
 }
 
+static int bp_name_ok(const char *s) { /* 設計図の名前は「<装備名> Plans」: 少し長くてよい */
+    return s && s[0] && strlen(s) <= BLUEPRINT_NAME_MAX_LEN;
+}
+
 static int icon_ok(const char *id) {
     return !id || !id[0] || icon_exists(id);
 } /* 未設定は許可する (フォールバックスプライトを使う) */
@@ -195,7 +199,7 @@ const char *content_validate_blueprints(const GuildRankDef *ranks, int n_rank, c
     }
     for (int b = 0; b < n_bp; b++) {
         const BlueprintDef *d = &bps[b];
-        if (!name_ok(d->name)) {
+        if (!bp_name_ok(d->name)) {
             return cerr("BLUEPRINTS", b, "name missing or too long");
         }
         if (!d->desc || !d->desc[0]) {
@@ -385,6 +389,72 @@ const char *content_validate_dragon_forging(const int pct[DRAGON_SCALE_USE_MAX +
     return NULL;
 }
 
+/* 特別契約どうしの整合性: 抽選の帯が 100% を超えない (Dragon Hunt と Relic Expedition は 1 回のロールを分け合う)、
+ * 依頼主が重ならない、解放の順序 (Relic Expedition は Dragon Hunt の対象より後) など */
+const char *content_validate_special_contracts(void) {
+    const char *e = content_validate_dragon_hunt(&GUILD_DRAGON_HUNT);
+    if (e) {
+        return e;
+    }
+    e = content_validate_dragon_hunt(&GUILD_RELIC_EXPEDITION);
+    if (e) {
+        return cerr("GUILD_RELIC_EXPEDITION", 0, "invalid definition");
+    }
+    if (GUILD_RELIC_EXPEDITION.min_done < GUILD_DRAGON_HUNT.min_done) {
+        return cerr("GUILD_RELIC_EXPEDITION", 0, "must unlock no earlier than Dragon Hunt (shared roll)");
+    }
+    if (GUILD_RELIC_EXPEDITION.spawn_pct + GUILD_DRAGON_HUNT.spawn_pct > 100) {
+        return cerr("GUILD_RELIC_EXPEDITION", 0, "spawn bands must fit in one 0..99 roll");
+    }
+    if (GUILD_RELIC_EXPEDITION.customer == GUILD_DRAGON_HUNT.customer ||
+        GUILD_RELIC_EXPEDITION.reward_mat == GUILD_DRAGON_HUNT.reward_mat) {
+        return cerr("GUILD_RELIC_EXPEDITION", 0, "client and reward must differ from Dragon Hunt");
+    }
+    if (GUILD_RELIC_EXPEDITION.min_done > GUILD_RANKS[RANK_COUNT - 1].need_done) {
+        return cerr("GUILD_RELIC_EXPEDITION", 0, "min_done must be reachable (at most the top rank)");
+    }
+    return NULL;
+}
+
+/* 日替わりイベント表の検査 (任意の表を渡せるので、不正な値が拒否されることをテストで示せる):
+ * 周期内で phase が重ならず、効果の数値が範囲内で、Arcane Convergence の移動量が Common を超えない */
+const char *content_validate_events(const DayEventDef defs[EVENT_COUNT]) {
+    for (int i = 0; i < EVENT_COUNT; i++) {
+        const DayEventDef *d = &defs[i];
+        if (!name_ok(d->name) || !d->desc || !d->desc[0] || !d->effect) {
+            return cerr("DAY_EVENTS", i, "name / desc / effect missing");
+        }
+        if (i == EVENT_NONE) {
+            if (d->phase != -1) {
+                return cerr("DAY_EVENTS", i, "EVENT_NONE has no phase (-1)");
+            }
+        } else {
+            if (d->phase < 0 || d->phase >= EVENT_CYCLE_DAYS || !d->effect[0]) {
+                return cerr("DAY_EVENTS", i, "phase must be 0..EVENT_CYCLE_DAYS-1 and effect text is required");
+            }
+            for (int j = 1; j < i; j++) {
+                if (defs[j].phase == d->phase) {
+                    return cerr("DAY_EVENTS", i, "two events share a phase");
+                }
+            }
+        }
+        if (d->market_discount_pct < 0 || d->market_discount_pct > 90 || d->guild_bonus_pct < 0 ||
+            d->guild_bonus_pct > 100) {
+            return cerr("DAY_EVENTS", i, "discount / bonus out of range");
+        }
+        if (d->quality_shift_common < 0 || d->quality_add_masterwork < 0 || d->quality_add_legendary < 0 ||
+            d->quality_add_masterwork + d->quality_add_legendary != d->quality_shift_common) {
+            return cerr("DAY_EVENTS", i, "quality shift must equal what is added (the total stays 100)");
+        }
+        for (int r = 0; r < RANK_COUNT; r++) {
+            if (d->quality_shift_common > QUALITY_RATE_PCT[r][QUALITY_COMMON]) {
+                return cerr("DAY_EVENTS", i, "quality shift exceeds a rank's Common chance");
+            }
+        }
+    }
+    return NULL;
+}
+
 const char *content_validate(void) {
     const char *e = content_validate_tables(MATERIALS, MAT_COUNT, EQUIPS, EQ_COUNT, CUSTOMER_DEFS, CUST_TYPE_COUNT,
                                             UPGRADES, UP_COUNT);
@@ -413,8 +483,16 @@ const char *content_validate(void) {
     if (e) {
         return e;
     }
+    e = content_validate_special_contracts();
+    if (e) {
+        return e;
+    }
+    e = content_validate_events(DAY_EVENTS);
+    if (e) {
+        return e;
+    }
     for (int m = 0; m < MAT_COUNT; m++) { /* 買えない素材は、どこかの契約の報酬でなければ入手手段がない */
-        if (MATERIALS[m].hunt_only && GUILD_DRAGON_HUNT.reward_mat != m) {
+        if (MATERIALS[m].hunt_only && GUILD_DRAGON_HUNT.reward_mat != m && GUILD_RELIC_EXPEDITION.reward_mat != m) {
             return cerr("MATERIALS", m, "hunt_only material is not the reward of any contract");
         }
     }

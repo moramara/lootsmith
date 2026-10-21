@@ -20,10 +20,27 @@ void equipment_compute_stats(Equipment *e, int forge_level) {
 }
 
 /* ---------- 品質 / 特性の層 ---------- */
-void quality_rates(int rank, int forge_level, int out[QUALITY_COUNT]) {
+/* 確率の組み立て順: ランクの基本確率 -> 日替わりイベント (Arcane Convergence) -> Forge。どの段階も合計を保つ (Common
+ * から他の品質へ 移すだけで、Common の残りを超えては移さない) ので、合計は常に 100 で、どの確率も負にならない。 */
+void quality_rates_on_day(int rank, int forge_level, int day, int out[QUALITY_COUNT]) {
     rank = clampi(rank, 0, RANK_COUNT - 1);
     for (int q = 0; q < QUALITY_COUNT; q++) {
         out[q] = QUALITY_RATE_PCT[rank][q];
+    }
+    const DayEventDef *ev = &DAY_EVENTS[day_event(day)];
+    if (ev->quality_shift_common > 0) {
+        int shift = ev->quality_shift_common;
+        int add_m = ev->quality_add_masterwork, add_l = ev->quality_add_legendary;
+        if (shift > out[QUALITY_COMMON]) {
+            shift = out[QUALITY_COMMON];
+        }
+        /* 移す量が Masterwork / Legendary への加算の合計に満たないときは、その比率で配分する (通常は 7 = 5 + 2
+         * で等しい) */
+        int total_add = add_m + add_l;
+        int to_m = total_add > 0 ? shift * add_m / total_add : 0;
+        out[QUALITY_COMMON] -= shift;
+        out[QUALITY_MASTERWORK] += to_m;
+        out[QUALITY_LEGENDARY] += shift - to_m;
     }
     int shift = clampi(forge_level, 0, UPGRADES[UP_FORGE].max_level) * BAL.quality_forge_shift_pct;
     if (shift > out[QUALITY_COMMON]) {
@@ -33,9 +50,13 @@ void quality_rates(int rank, int forge_level, int out[QUALITY_COUNT]) {
     out[QUALITY_FINE] += shift;
 }
 
-int quality_from_roll(int rank, int forge_level, int roll) {
+void quality_rates(int rank, int forge_level, int out[QUALITY_COUNT]) {
+    quality_rates_on_day(rank, forge_level, 0, out); /* day 0 はイベントなし: 日付に依存しない従来の確率 */
+}
+
+int quality_from_roll_on_day(int rank, int forge_level, int day, int roll) {
     int r[QUALITY_COUNT], acc = 0, last = QUALITY_COMMON;
-    quality_rates(rank, forge_level, r);
+    quality_rates_on_day(rank, forge_level, day, r);
     roll = clampi(roll, 0, 99);
     for (int q = 0; q < QUALITY_COUNT; q++) {
         if (r[q] <= 0) {
@@ -48,6 +69,10 @@ int quality_from_roll(int rank, int forge_level, int roll) {
         }
     }
     return last;
+}
+
+int quality_from_roll(int rank, int forge_level, int roll) {
+    return quality_from_roll_on_day(rank, forge_level, 0, roll);
 }
 
 int trait_from_roll(int roll) {
@@ -167,6 +192,13 @@ void equipment_build(Equipment *e, int forge_level, int quality, int trait) {
     equipment_apply_quality(e, quality, trait); /* 不正な組み合わせは、ただの Common アイテムになる */
 }
 
+int equipment_rarity_bonus(const Equipment *e) {
+    if (e->main < 0 || e->main >= MAT_COUNT || e->sub < 0 || e->sub >= MAT_COUNT) {
+        return 0;
+    }
+    return 2 * MATERIALS[e->main].rarity_value + MATERIALS[e->sub].rarity_value;
+}
+
 void equipment_price(Equipment *e) {
     double stat = e->atk * BAL.val_atk_pm / 1000.0 + e->def * BAL.val_def_pm / 1000.0 +
                   e->mag * BAL.val_mag_pm / 1000.0 + e->dur * BAL.val_dur_pm / 1000.0;
@@ -177,9 +209,7 @@ void equipment_price(Equipment *e) {
     double value = e->cost * BAL.val_cost_pm / 1000.0 + stat * BAL.val_stat_pm / 1000.0;
     /* 希少素材の優遇: 使った素材 3 個 (主 2 + 副 1) の希少度を、品質・特性・Forge を反映した後の価値にそのまま足す。
      * 原価が 0 の報酬素材 (Dragon Scale) でも、希少さが価値と推奨価格に出る。従来の素材は 0 なので何も変わらない */
-    if (e->main >= 0 && e->main < MAT_COUNT && e->sub >= 0 && e->sub < MAT_COUNT) {
-        value += 2 * MATERIALS[e->main].rarity_value + MATERIALS[e->sub].rarity_value;
-    }
+    value += equipment_rarity_bonus(e);
     e->value = roundi(value);
     e->rec_price = clampi((int)ceil(value * BAL.margin_pm / 1000.0), 1, BAL.price_cap);
 }
@@ -256,7 +286,9 @@ Result craft_equipment(GameState *g, int eq, int main, int sub, int *out_idx) {
     /* ここまでのすべてが成功し、もう失敗しえない: craft_rng を消費するのはここから (rng / guild_rng
      * は決して消費しない)。 */
     int forge = g->up_level[UP_FORGE];
-    int quality = quality_from_roll(guild_rank(g->guild_done), forge, rng_range(&g->craft_rng, 0, 99));
+    int quality =
+        quality_from_roll_on_day(guild_rank(g->guild_done), forge, g->day,
+                                 rng_range(&g->craft_rng, 0, 99)); /* ロールは 1 回のまま。イベントは確率だけを変える */
     int trait = craft_roll_trait(&g->craft_rng, quality, main, sub);
     equipment_build(&e, forge, quality, trait); /* 基本能力 -> 品質 -> 特性。それぞれちょうど 1 回 */
     equipment_price(&e);                        /* 価値と価格は最終的な能力から求める */

@@ -134,38 +134,50 @@ void screen_craft(App *a) {
     stat_row(334, 206, "WT", e.wt, 14, C_STEEL);
     { /* 表示するのは確率であって結果ではない: 品質と特性はアイテムをクラフトしたときに初めて抽選される */
         int rank = guild_rank(g->guild_done), forge = g->up_level[UP_FORGE], od[QUALITY_COUNT];
-        quality_rates(rank, forge, od);
-        txt("QUALITY ODDS", 334, 220, C_DIM);
-        txt_r(TextFormat("%s, Forge Lv %d", guild_rank_name(rank), forge), 618, 220, C_DIM);
+        quality_rates_on_day(rank, forge, g->day, od); /* 今日のイベント (Arcane Convergence) を含む確率 */
+        txt("QUALITY ODDS", 334, 218, C_DIM);
+        txt_r(TextFormat("%s, Forge Lv %d", guild_rank_name(rank), forge), 618, 218, C_DIM);
         for (int q = 0; q < QUALITY_COUNT; q++) {
-            txt(TextFormat("%s %d%%", quality_tag(q), od[q]), 334 + q * 72, 232, od[q] > 0 ? quality_color(q) : C_DIM);
+            txt(TextFormat("%s %d%%", quality_tag(q), od[q]), 334 + q * 72, 229, od[q] > 0 ? quality_color(q) : C_DIM);
+        }
+        if (day_event(g->day) == EVENT_ARCANE_CONVERGENCE) {
+            const DayEventDef *ev = &DAY_EVENTS[EVENT_ARCANE_CONVERGENCE]; /* 補正の数値は表から: Common から移して
+                                                                              Masterwork / Legendary へ */
+            txt_fit(TextFormat("ARCANE CONVERGENCE: COM -%d  MSTR +%d  LGND +%d", ev->quality_shift_common,
+                               ev->quality_add_masterwork, ev->quality_add_legendary),
+                    334, 241, 286, event_color(EVENT_ARCANE_CONVERGENCE));
         }
     }
     char nb[64];
-    txt(TextFormat("Needs: %s", need_text(e.main, e.sub, nb, sizeof nb)), 334, 246, C_TEXT);
-    txt(TextFormat("Est. cost: %d", e.cost), 334, 258, C_TEXT);
-    txt(TextFormat("Rec. price (Common): %d  (profit %d)", e.rec_price, e.rec_price - e.cost), 334, 270, C_GOLD);
+    txt(TextFormat("Needs: %s", need_text(e.main, e.sub, nb, sizeof nb)), 334, 253, C_TEXT);
+    txt(TextFormat("Est. cost: %d", e.cost), 334, 264, C_TEXT);
+    if (equipment_rarity_bonus(&e) > 0) { /* 希少素材 (Dragon Scale / Astral Shard) の分は価値に直接加わる */
+        txt_r(TextFormat("incl. rarity +%d", equipment_rarity_bonus(&e)), 618, 264, C_GOOD);
+    }
+    txt(TextFormat("Rec. price (Common): %d  (profit %d)", e.rec_price, e.rec_price - e.cost), 334, 275, C_GOLD);
     Result can = can_craft(g, a->cr_eq, a->cr_main, a->cr_sub);
     if (can == R_ERR_MATERIAL) {
         int hm = missing_hunt_mat(g, a->cr_main, a->cr_sub);
         if (hm >= 0) {
-            txt_fit(TextFormat("Not enough %s - win it in %s contracts.", MATERIALS[hm].name, GUILD_DRAGON_HUNT.name),
-                    334, 284, 286, C_BAD);
+            const SpecialContractDef *src = guild_reward_source(hm);
+            txt_fit(
+                TextFormat("Not enough %s - win it in %s contracts.", MATERIALS[hm].name, src ? src->name : "guild"),
+                334, 290, 286, C_BAD);
         } else {
-            txt("Not enough materials - buy more at the MARKET.", 334, 284, C_BAD);
+            txt("Not enough materials - buy more at the MARKET.", 334, 290, C_BAD);
         }
     }
     if (can == R_ERR_FULL) {
-        txt("Storage is full - sell or liquidate something.", 334, 284, C_BAD);
+        txt("Storage is full - sell or liquidate something.", 334, 290, C_BAD);
     }
     if (can == R_ERR_LOCKED) {
         int bp = blueprint_of_equip(a->cr_eq);
         txt_fit(bp >= 0 ? TextFormat("LOCKED: %s rank (%d contracts)", GUILD_RANKS[BLUEPRINTS[bp].rank].name,
                                      GUILD_RANKS[BLUEPRINTS[bp].rank].need_done)
                         : "LOCKED.",
-                334, 284, 286, C_BAD);
+                334, 290, 286, C_BAD);
     }
-    if (btn(a, 334, 302, 282, 28, "CRAFT [Enter]", can == R_OK ? 0 : BF_DIM, KEY_ENTER)) {
+    if (btn(a, 334, 304, 282, 28, "CRAFT [Enter]", can == R_OK ? 0 : BF_DIM, KEY_ENTER)) {
         int idx = -1;
         Result r = craft_equipment(g, a->cr_eq, a->cr_main, a->cr_sub, &idx);
         if (r == R_OK) {

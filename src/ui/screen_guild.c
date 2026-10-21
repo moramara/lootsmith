@@ -45,8 +45,13 @@ static void draw_rank_strip(const GameState *g, int x, int y, int w) {
         DrawRectangle(x + 280, y + 8, 56 * (done - lo) / (hi - lo > 0 ? hi - lo : 1), 8, C_GOLD);
         DrawRectangleLines(x + 280, y + 8, 56, 8, C_BORDER_D);
         if (nb >= 0) {
-            txt_fit(TextFormat("NEXT BLUEPRINT: %s", EQUIPS[BLUEPRINTS[nb].equip].name), x + 346, y + 8,
-                    w - 346 - (w > 400 ? 106 : 8), C_TEXT);
+            int same = 0; /* 同じランクで解放される設計図の数 (Ascendant Smith は 3 つ) */
+            for (int b = 0; b < BP_COUNT; b++) {
+                same += BLUEPRINTS[b].rank == BLUEPRINTS[nb].rank;
+            }
+            txt_fit(same > 1 ? TextFormat("NEXT: %s +%d PLANS", EQUIPS[BLUEPRINTS[nb].equip].name, same - 1)
+                             : TextFormat("NEXT BLUEPRINT: %s", EQUIPS[BLUEPRINTS[nb].equip].name),
+                    x + 346, y + 8, w - 346 - (w > 400 ? 106 : 8), C_TEXT);
         }
     } else {
         txt(TextFormat("CONTRACTS: %d", done), x + 162, y + 8, C_TEXT);
@@ -108,17 +113,18 @@ void screen_guild(App *a) {
         const GuildContract *c = &g->guild_board[i];
         const CustomerDef *cd = &CUSTOMER_DEFS[c->customer_type];
         int y = 90 + i * 82;
-        bool hunt = c->kind == GUILD_CONTRACT_DRAGON_HUNT; /* 特別契約: 色と表示で通常契約と区別する */
-        DrawRectangle(18, y, 284, 78, hunt ? RGB(58, 30, 24) : C_PANEL2);
-        DrawRectangleLines(18, y, 284, 78, hunt ? C_ORANGE : C_BORDER_D);
+        bool hunt = c->kind != GUILD_CONTRACT_STANDARD; /* 特別契約: 色と札で通常契約と区別する */
+        const int c_kind = c->kind; /* 受注すると掲示板が詰まる: 種別は先に控える */
+        DrawRectangle(18, y, 284, 78, special_bg(c->kind));
+        DrawRectangleLines(18, y, 284, 78, hunt ? special_color(c->kind) : C_BORDER_D);
         draw_cust_icon(c->customer_type, 24, y + 8, 4);
         if (hunt) {
-            txt(T_DRAGON_HUNT_TAG, 80, y + 4, C_ORANGE);
-            txt_fit(cd->name, 152, y + 4, 80, C_DIM);
+            txt_fit(special_tag(c->kind), 80, y + 4, 184, special_color(c->kind));
+            txt_fit(TextFormat("%s wants %s", cd->name, EQUIPS[cd->wants_eq].name), 80, y + 15, 184, C_TEXT);
         } else {
             txt_fit(cd->name, 80, y + 4, 130, C_GOLD);
+            txt_fit(TextFormat("wants %s", EQUIPS[cd->wants_eq].name), 80, y + 15, 150, C_TEXT);
         }
-        txt_fit(TextFormat("wants %s", EQUIPS[cd->wants_eq].name), 80, y + 15, 150, C_TEXT);
         draw_equip_icon(cd->wants_eq, -1, -1, 270, y + 4, 2);
         txt(TextFormat("FIT %d%%+", c->min_fit), 80, y + 27, C_TEXT);
         txt(GUILD_DIFFS[c->difficulty].name, 150, y + 27, diff_color(c->difficulty));
@@ -134,7 +140,7 @@ void screen_guild(App *a) {
                 a->gl_sel = g->guild_active_count - 1;
                 a->gl_item = -1;
                 a->gl_scroll = 0;
-                say(a, true, "%s accepted: %s wants a %s. Due day %d.", hunt ? GUILD_DRAGON_HUNT.name : "Contract",
+                say(a, true, "%s accepted: %s wants a %s. Due day %d.", hunt ? guild_kind_name(c_kind) : "Contract",
                     cd->name, EQUIPS[cd->wants_eq].name, g->guild_active[a->gl_sel].deadline_day);
                 spark(a, 250, (float)y + 40, 8, C_GOLD);
             } else {
@@ -146,6 +152,11 @@ void screen_guild(App *a) {
 
     /* ---- 受注済みの契約 ---- */
     panel(320, 74, 310, 90, "MY CONTRACTS");
+    if (day_event(g->day) == EVENT_GUILD_ASSEMBLY) { /* 当日の補正: 納品したときのゴールド報酬に上乗せされる (表示は
+                                                        core のイベント表から) */
+        txt_r(TextFormat("GUILD ASSEMBLY: +%d%% GOLD TODAY", DAY_EVENTS[EVENT_GUILD_ASSEMBLY].guild_bonus_pct), 624, 76,
+              event_color(EVENT_GUILD_ASSEMBLY));
+    }
     if (a->gl_sel >= g->guild_active_count) {
         a->gl_sel = g->guild_active_count - 1;
     }
@@ -155,9 +166,10 @@ void screen_guild(App *a) {
     for (int i = 0; i < GUILD_ACTIVE_MAX; i++) {
         int y = 90 + i * 36;
         bool have = i < g->guild_active_count, sel = have && a->gl_sel == i;
-        bool hunt_row = have && g->guild_active[i].kind == GUILD_CONTRACT_DRAGON_HUNT;
-        DrawRectangle(326, y, 298, 33, sel ? C_BTN_SEL : hunt_row ? RGB(58, 30, 24) : C_PANEL2);
-        DrawRectangleLines(326, y, 298, 33, sel ? C_GOLD : hunt_row ? C_ORANGE : C_BORDER_D);
+        bool hunt_row = have && g->guild_active[i].kind != GUILD_CONTRACT_STANDARD;
+        int row_kind = have ? g->guild_active[i].kind : GUILD_CONTRACT_STANDARD;
+        DrawRectangle(326, y, 298, 33, sel ? C_BTN_SEL : special_bg(row_kind));
+        DrawRectangleLines(326, y, 298, 33, sel ? C_GOLD : hunt_row ? special_color(row_kind) : C_BORDER_D);
         if (!have) {
             txt("(empty slot)", 334, y + 12, C_DIM);
             continue;
@@ -172,14 +184,19 @@ void screen_guild(App *a) {
         }
         draw_cust_icon(c->customer_type, 330, y + 4, 2);
         if (hunt_row) {
-            txt_fit(TextFormat("%s  FIT %d%%+", T_DRAGON_HUNT_TAG, c->min_fit), 360, y + 5, 170, C_ORANGE);
+            txt_fit(TextFormat("%s  FIT %d%%+", special_tag(c->kind), c->min_fit), 360, y + 5, 170,
+                    special_color(c->kind));
         } else {
             txt_fit(TextFormat("%s: %s  FIT %d%%+", cd->name, EQUIPS[cd->wants_eq].name, c->min_fit), 360, y + 5, 170,
                     C_TEXT);
         }
         txt(TextFormat("DUE DAY %d", c->deadline_day), 360, y + 18,
             c->deadline_day <= g->day ? (sel ? WHITE : C_ORANGE) : (sel ? C_TEXT : C_DIM));
-        txt_r(TextFormat("%dg +%d", c->gold, c->rep), 618, y + 5, C_GOLD);
+        {
+            int bonus = event_guild_bonus(
+                c->gold, g->day); /* 今日納品したときの実際のゴールド (Guild Assembly の日だけ増える) */
+            txt_r(TextFormat("%dg +%d", c->gold + bonus, c->rep), 618, y + 5, bonus ? C_GOOD : C_GOLD);
+        }
         if (hunt_row) {
             txt_r(reward_text(c), 618, y + 18, C_GOOD);
         } else {
@@ -196,20 +213,21 @@ void screen_guild(App *a) {
     } else {
         const GuildContract *k = &g->guild_active[a->gl_sel];
         const CustomerDef *cd = &CUSTOMER_DEFS[k->customer_type];
-        bool hunt_k = k->kind == GUILD_CONTRACT_DRAGON_HUNT;
+        bool hunt_k = k->kind != GUILD_CONTRACT_STANDARD;
         if (hunt_k) { /* 受注後の詳細: 依頼主・必要装備・最低 FIT・残り期限・特別報酬 */
             int left = k->deadline_day - g->day + 1;
             bool blocked = k->reward_mat >= 0 && k->reward_mat < MAT_COUNT &&
                            g->mat_stock[k->reward_mat] + k->reward_qty > BAL.stock_cap;
-            txt_fit(TextFormat("%s: %s wants a %s, FIT %d%%+", T_DRAGON_HUNT_TAG, cd->name, EQUIPS[cd->wants_eq].name,
-                               k->min_fit),
-                    332, 184, 290, C_ORANGE);
+            txt_fit(TextFormat("%s: %s, FIT %d%%+", special_tag(k->kind), EQUIPS[cd->wants_eq].name, k->min_fit), 332,
+                    184, 290, special_color(k->kind));
             txt_fit(TextFormat("Due day %d (%d day%s left)", k->deadline_day, left, left == 1 ? "" : "s"), 332, 197,
                     128, left <= 1 ? C_ORANGE : C_DIM);
             if (blocked) { /* 在庫上限: この状態では納品できない (guild_deliver が GUILD_ERR_REWARD_FULL を返す) */
                 txt_r(TextFormat("%s STOCK FULL!", upper_txt(MATERIALS[k->reward_mat].name)), 622, 197, C_BAD);
             } else {
-                txt_r(TextFormat("%dg +%d rep  %s", k->gold, k->rep, reward_text(k)), 622, 197, C_GOOD);
+                txt_r(
+                    TextFormat("%dg +%d rep  %s", k->gold + event_guild_bonus(k->gold, g->day), k->rep, reward_text(k)),
+                    622, 197, C_GOOD);
             }
         } else {
             txt_fit(TextFormat("%s wants a %s with FIT %d%%+", cd->name, EQUIPS[cd->wants_eq].name, k->min_fit), 332,
@@ -329,17 +347,21 @@ void screen_guild(App *a) {
             Equipment e = g->inv[a->gl_item];
             GuildOutcome o; /* 候補リストから取った、実際の在庫添字 */
             int rank_before = guild_rank(g->guild_done);
+            int done_kind = g->guild_active[a->gl_sel].kind; /* 納品で契約は消える: 種別を先に控える */
             GuildResult r = guild_deliver(g, a->gl_sel, a->gl_item, &o);
             if (r == GUILD_OK) {
-                if (o.reward_qty > 0) { /* Dragon Hunt: 特別報酬の獲得を知らせる (納品が成功したときだけ) */
+                if (o.reward_qty > 0) { /* 特別契約: 特別報酬の獲得を知らせる (納品が成功したときだけ) */
                     const MaterialDef *rm = &MATERIALS[o.reward_mat];
                     say(a, true, "Delivered %s! +%d gold, +%d rep, +%d %s!", equip_full_name(&e), o.gold, o.rep_gain,
                         o.reward_qty, rm->name);
-                    snprintf(a->banner_a, sizeof a->banner_a, "%s COMPLETE!", T_DRAGON_HUNT_TAG);
+                    snprintf(a->banner_a, sizeof a->banner_a, "%s COMPLETE!", special_tag(done_kind));
                     snprintf(a->banner_b, sizeof a->banner_b, "+%d %s (now %d)", o.reward_qty, upper_txt(rm->name),
                              g->mat_stock[o.reward_mat]);
                     a->banner_t = 5.0f;
                     spark(a, 420, 300, 40, icol(rm->color));
+                } else if (o.bonus_gold > 0) {
+                    say(a, true, "Delivered %s! +%d gold (%d Assembly bonus), +%d rep.", equip_full_name(&e), o.gold,
+                        o.bonus_gold, o.rep_gain);
                 } else {
                     say(a, true, "Delivered %s! +%d gold, +%d rep.", equip_full_name(&e), o.gold, o.rep_gain);
                 }

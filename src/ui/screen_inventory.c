@@ -184,6 +184,9 @@ void screen_inv(App *a) {
         }
         txt("Left/Right: price (Shift = x10)", 432, 292, C_DIM);
         txt("Liquidation pays 50% of cost.", 432, 304, C_DIM);
+        if (equipment_rarity_bonus(e) > 0) { /* 希少素材の価値ボーナスは Recommended に含まれる */
+            txt_fit(TextFormat("Value includes rarity +%d", equipment_rarity_bonus(e)), 432, 316, 190, C_GOOD);
+        }
     }
     draw_footer(a);
 }

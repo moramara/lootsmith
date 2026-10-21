@@ -7,6 +7,9 @@ C11 + raylib で作った 8bit 風の鍛冶屋タイクーンゲームです。�
 
 - 市場価格の変動、客ごとの好み (優先する能力値・予算・許容価格)、価格設定による駆け引き
 - ギルド契約 (受注 → クラフト → 納品) とギルドランクによる設計図の解放
+- **The Ascendant Era (大型アップデート)**: 最高ランク Ascendant Smith (75 件)、新設計図と装備 3 種 (Astral Blade / Aegis of Dawn / Void Codex) と客 3 人、
+  新素材 (Mithril / Moonstone / Emberglass、特別契約でのみ得られる Astral Shard)、特別契約 Relic Expedition、7 日周期の日替わりイベント
+  (Market Caravan / Arcane Convergence / Guild Assembly)。セーブ形式は変わらず、既存のセーブはそのまま遊べる
 - 装備ごとの品質 (Common〜Legendary) と特殊特性
 - オリジナル合成の BGM と効果音、音量オプション
 - 同じシードと同じ操作列なら完全に再現できる決定的なシミュレーション

@@ -17,8 +17,15 @@ void screen_market(App *a) {
     txt("Up/Down: row   Left/Right: amount   Enter: buy", 134, 50, C_DIM);
     /* 素材が行数より多い場合: リストがスクロールする (ホイール、矢印、^ / v ボタン)。選択行は常に見える。 */
     int maxs = MAT_COUNT > MK_VISIBLE ? MAT_COUNT - MK_VISIBLE : 0;
-    txt(TextFormat("Supplier discount: %d%%", upgrade_effect(UP_SUPPLY, g->up_level[UP_SUPPLY])), maxs > 0 ? 404 : 440,
-        50, C_TEXT);
+    {
+        int sup = upgrade_effect(UP_SUPPLY, g->up_level[UP_SUPPLY]), ev = event_market_discount_pct(g->day);
+        if (ev > 0) { /* Market Caravan: Supplier の割引と併用 (最終価格は 2 つを掛け合わせて 1 回だけ丸める) */
+            txt_r(TextFormat("Supplier %d%% + CARAVAN %d%%", sup, ev), maxs > 0 ? 540 : 580, 50,
+                  event_color(EVENT_MARKET_CARAVAN));
+        } else {
+            txt(TextFormat("Supplier discount: %d%%", sup), maxs > 0 ? 404 : 440, 50, C_TEXT);
+        }
+    }
     if (maxs > 0) {
         float wheel = GetMouseWheelMove();
         if (wheel != 0 && in_rect(a->mouse, 10, 48, 620, 290)) {
@@ -77,15 +84,17 @@ void screen_market(App *a) {
         if (MATERIALS[m].hunt_only) { /* 市場では買えない素材: 価格も購入操作もなく、入手経路だけを見せる */
             txt_big(T_HUNT_ONLY, 84, y + 22, 20, C_ORANGE);
             txt("Not for sale.", 84, y + 46, C_DIM);
-            txt_fit(TextFormat("Reward: %s contract", GUILD_DRAGON_HUNT.name), 84, y + 60, 112, C_GOLD);
+            const SpecialContractDef *src = guild_reward_source(m); /* この素材を報酬にする特別契約 (表から引く) */
+            txt("Guild reward", 84, y + 60, C_GOLD);
             txt(TextFormat("In stock: %d", g->mat_stock[m]), 200, y + 14, g->mat_stock[m] ? C_GOOD : C_TEXT);
-            txt(g->mat_stock[m] ? "Avg cost: 0 (free reward)" : "Avg cost: -", 200, y + 28, C_DIM);
+            txt(g->mat_stock[m] ? "Avg cost: 0 (free)" : "Avg cost: -", 200, y + 28, C_DIM);
             txt_fit(MATERIALS[m].desc, 200, y + 66, 410, C_DIM);
-            txt_fit(TextFormat("Deliver a %s from the GUILD",
-                               EQUIPS[CUSTOMER_DEFS[GUILD_DRAGON_HUNT.customer].wants_eq].name),
+            txt_fit(TextFormat("%s: deliver a %s", src ? src->name : "?",
+                               src ? EQUIPS[CUSTOMER_DEFS[src->customer].wants_eq].name : "?"),
                     320, y + 14, 290, C_TEXT);
-            txt_fit(TextFormat("(Mythic Smith, %d%% chance per day)", GUILD_DRAGON_HUNT.spawn_pct), 320, y + 28, 290,
-                    C_DIM);
+            txt_fit(TextFormat("(%s or higher, %d%% chance per day)",
+                               src ? GUILD_RANKS[guild_rank(src->min_done)].name : "?", src ? src->spawn_pct : 0),
+                    320, y + 28, 290, C_DIM);
             /* ボタンは見かけだけ: 押しても (Enter でも) core の market_buy() が R_ERR_NOT_FOR_SALE を返すだけで、
              * 在庫・所持金・価格には何も起きない */
             if (btn(a, 320, y + 38, 120, 22, T_HUNT_ONLY, BF_DIM, 0) || (sel && key_hit(a, KEY_ENTER))) {
@@ -110,6 +119,17 @@ void screen_market(App *a) {
         txt(TextFormat("In stock: %d", g->mat_stock[m]), 200, y + 14, C_TEXT);
         txt(g->mat_stock[m] ? TextFormat("Avg cost: %d", avg) : "Avg cost: -", 200, y + 28, C_DIM);
         txt_fit(MATERIALS[m].desc, 200, y + 66, 410, C_DIM);
+        { /* 通常価格 -> 最終価格。表示・見積もり・購入は同じ core の式 (market_unit_price / market_quote) を通る */
+            int sup = upgrade_effect(UP_SUPPLY, g->up_level[UP_SUPPLY]), ev = event_market_discount_pct(g->day),
+                fin = market_unit_price(g, m);
+            txt(TextFormat("Final: %d each", fin), 200, y + 42, fin < g->price[m] ? C_GOOD : C_TEXT);
+            if (sup > 0 || ev > 0) {
+                txt_fit(sup > 0 && ev > 0 ? TextFormat("Sup -%d%%  Event -%d%%", sup, ev)
+                        : ev > 0          ? TextFormat("Event -%d%%", ev)
+                                          : TextFormat("Supplier -%d%%", sup),
+                        200, y + 54, 116, event_color(ev > 0 ? EVENT_MARKET_CARAVAN : EVENT_NONE));
+            }
+        }
 
         int *q = &a->mk_qty[m];
         int bx = 320;

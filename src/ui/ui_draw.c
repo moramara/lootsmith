@@ -294,3 +294,44 @@ int market_mat_at(int i) {
     }
     return -1;
 }
+
+/* ---------- 特別契約・日替わりイベントの表示 ---------- */
+const char *special_tag(int kind) {
+    return kind == GUILD_CONTRACT_DRAGON_HUNT        ? T_DRAGON_HUNT_TAG
+           : kind == GUILD_CONTRACT_RELIC_EXPEDITION ? T_RELIC_TAG
+                                                     : "";
+}
+
+Color special_color(int kind) {
+    return kind == GUILD_CONTRACT_DRAGON_HUNT        ? C_ORANGE
+           : kind == GUILD_CONTRACT_RELIC_EXPEDITION ? RGB(120, 214, 255)
+                                                     : C_TEXT;
+}
+
+Color special_bg(int kind) {
+    return kind == GUILD_CONTRACT_DRAGON_HUNT        ? RGB(58, 30, 24)
+           : kind == GUILD_CONTRACT_RELIC_EXPEDITION ? RGB(22, 36, 62)
+                                                     : C_PANEL2;
+}
+
+Color event_color(int event) {
+    return event == EVENT_MARKET_CARAVAN       ? C_GOLD
+           : event == EVENT_ARCANE_CONVERGENCE ? RGB(190, 130, 255)
+           : event == EVENT_GUILD_ASSEMBLY     ? C_GOOD
+                                               : C_DIM;
+}
+
+const char *event_headline(int day) {
+    int ev = day_event(day);
+    if (ev == EVENT_NONE) {
+        return "";
+    }
+    char up[40];
+    snprintf(up, sizeof up, "%s", DAY_EVENTS[ev].name);
+    for (char *p = up; *p; p++) {
+        if (*p >= 'a' && *p <= 'z') {
+            *p = (char)(*p - 32);
+        }
+    }
+    return TextFormat("EVENT: %s - %s", up, DAY_EVENTS[ev].effect);
+}

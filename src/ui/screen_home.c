@@ -50,6 +50,11 @@ void screen_main(App *a) {
     draw_scene(a, 11, 62, 298, 181);
 
     panel(320, 48, 310, 196, "SHOP STATUS");
+    { /* 今日のイベント (日付から導く。イベントがない日は "No event" だけ) */
+        int ev = day_event(g->day);
+        txt_r(ev == EVENT_NONE ? "No event" : TextFormat("EVENT: %s", upper_txt(DAY_EVENTS[ev].name)), 624, 51,
+              event_color(ev));
+    }
     int x = 330, y = 66;
     txt(TextFormat("GOLD  %d / %d", g->money, BAL.goal_money), x, y, C_GOLD);
     bar(x + 130, y, 160, 9, g->money, BAL.goal_money, C_GOLD);
@@ -105,6 +110,9 @@ void screen_main(App *a) {
                 due <= g->day ? C_ORANGE : C_GOLD);
     } else {
         txt("Plan: buy, craft, price, open!", 462, 260, C_DIM);
+    }
+    if (day_event(g->day) != EVENT_NONE) { /* 効果の説明は 1 行で (固定幅に収める) */
+        txt_fit(DAY_EVENTS[day_event(g->day)].effect, 462, 272, 168, event_color(day_event(g->day)));
     }
 
     panel(10, 284, 620, 54, "TODAY'S MARKET");
